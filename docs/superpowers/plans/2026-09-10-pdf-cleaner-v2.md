@@ -24,6 +24,7 @@
 - Legacy TDM/IPCLASS/TYHH/Ebook engines remain until V2 regression and benchmark evidence supports deletion.
 - Do not claim speed/quality improvement without benchmark/QC evidence.
 - If an assumption about a PDF representation is disproved, stop and amend the plan/design before proceeding.
+- Task 0 is baseline restoration/test scaffolding only and does not change production behavior; its gate is source-hash parity plus passing baseline verification. TDD RED begins with Task 1.
 
 ---
 
@@ -68,7 +69,9 @@
 
 - [ ] **Step 0.2: Read plan/spec again before test harness changes.**
 
-- [ ] **Step 0.3: Write a failing baseline import test.**
+- [ ] **Step 0.3: Add a baseline verification test for restored entrypoints and repository layout.**
+
+  This is a non-behavioral baseline/scaffolding task. Do not fabricate a RED failure after source restoration; source SHA-256 parity is the restore gate and the baseline test must pass.
 
 ```python
 from pathlib import Path
@@ -83,13 +86,13 @@ def test_expected_desktop_entrypoints_exist():
     assert (root / "frontend" / "static" / "app.js").is_file()
 ```
 
-- [ ] **Step 0.4: Run focused test and confirm the expected failure before harness/baseline is complete.**
+- [ ] **Step 0.4: Add the minimum pytest/CI scaffolding without changing production behavior.**
+
+  CI workflow runs on pushes/PRs and installs the project dependencies plus pytest, then executes `python -m pytest -q`.
+
+- [ ] **Step 0.5: Run the focused baseline verification and confirm PASS.**
 
   Run: `python -m pytest tests/test_baseline_imports.py -q`
-
-- [ ] **Step 0.5: Add the minimum pytest/CI scaffolding and make the baseline test pass.**
-
-  CI workflow runs on pushes/PRs and installs `backend/requirements.txt` plus pytest, then executes `python -m pytest -q`.
 
 - [ ] **Step 0.6: Run full baseline suite.**
 
@@ -402,6 +405,7 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-09 | Pre-plan | `9a89b03a1f732b42f4ca9809f57a2a52efddd8a0` | Branch head inspected | Bootstrap chunks exist on `main`; source tree not yet restored as normal repository files. |
 | 2026-09-10 | Design | `d159a5bbc918986e22c0777518ae8c705efc3a28` | Approved design written to feature branch | No production code changed. |
 | 2026-09-10 | Governance | `9ec5cd02a1d38fc0af5cf248d0ecd947f867f792` | `AGENTS.md` added | Execution gates codified before production refactor. |
+| 2026-09-10 | Task 0 restore attempt | `c20e376a714c90c91d4f6a36953eb5c83d874a5b` / Actions `34414250113` | `xz --test` failed: `Unexpected end of input` | Bootstrap transport on GitHub had only 8 of 17 archive chunks. No production source was changed; restore strategy must be corrected before continuing. |
 
 ## Acceptance-Criteria Traceability
 
