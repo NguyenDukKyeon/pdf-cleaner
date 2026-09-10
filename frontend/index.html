@@ -15,7 +15,7 @@
           <h1>PDF_Cleaner</h1>
           <span class="version-badge">Native</span>
         </div>
-        <p>Làm sạch watermark PDF scan</p>
+        <p>Tự động phân tích và làm sạch watermark PDF</p>
       </div>
     </div>
     <div class="header-actions">
@@ -103,21 +103,22 @@
             <div class="card-head">
               <span class="step">3</span>
               <div>
-                <h2>Chế độ xử lý</h2>
-                <p>Mặc định dùng Lý - IPCLASS từ engine mới; có thể đổi mode nếu cần.</p>
+                <h2>Chế độ xử lý tự động</h2>
+                <p>Auto V2 phân tích cấu trúc PDF rồi chọn chiến lược phù hợp; bạn chỉ cần chọn mức chất lượng.</p>
               </div>
             </div>
-            <div id="modePicker" class="picker-grid mode-picker" role="radiogroup" aria-label="Loại tài liệu">
-              <button class="pick-card" data-mode="toan"><span>∑</span><strong>Toán - TDM</strong></button>
-              <button class="pick-card selected" data-mode="ly"><span>⚛</span><strong>Lý - IPCLASS</strong></button>
-              <button class="pick-card" data-mode="hoa"><span>⚗</span><strong>Hóa - TYHH</strong></button>
-              <button class="pick-card" data-mode="ebook"><span>📖</span><strong>Ebook</strong></button>
+            <div class="auto-mode-card" aria-label="Auto V2">
+              <span class="auto-mode-badge">AUTO V2</span>
+              <div>
+                <strong>Tự động nhận dạng loại PDF và watermark</strong>
+                <small>Ưu tiên giữ cấu trúc PDF; chỉ rasterize khi thực sự cần.</small>
+              </div>
             </div>
             <div id="presetPicker" class="picker-grid preset-picker" role="radiogroup" aria-label="Preset chất lượng">
               <button class="preset-card" data-preset="fast"><b>Fast</b><small>Tốc độ cao, chất lượng vừa</small></button>
               <button class="preset-card selected" data-preset="balanced"><b>Balanced</b><small>Cân bằng tốc độ/chất lượng</small></button>
               <button class="preset-card" data-preset="high_quality"><b>High Quality</b><small>Chất lượng cao nhất</small></button>
-              <button class="preset-card" data-preset="safe_mode"><b>Safe Mode</b><small>An toàn, 1 CPU</small></button>
+              <button class="preset-card" data-preset="safe_mode"><b>Safe</b><small>Bảo thủ, chạy 1 worker</small></button>
             </div>
             <p id="presetHint" class="hint">Cân bằng giữa tốc độ và chất lượng.</p>
           </article>
@@ -152,6 +153,23 @@
             </div>
             <div id="progressDetail" class="progress-detail">File 0/0 • Trang 0/0</div>
             <div id="statusText" class="status-text">Sẵn sàng • Hãy chọn file PDF để bắt đầu.</div>
+
+            <ol id="stageList" class="stage-list" aria-label="Các giai đoạn xử lý V2">
+              <li data-stage="ANALYZING"><span class="stage-dot"></span><span>Phân tích PDF</span></li>
+              <li data-stage="PLANNING"><span class="stage-dot"></span><span>Chọn chiến lược</span></li>
+              <li data-stage="PROCESSING"><span class="stage-dot"></span><span>Xử lý watermark</span></li>
+              <li data-stage="VERIFYING"><span class="stage-dot"></span><span>Kiểm tra chất lượng</span></li>
+            </ol>
+
+            <div class="diagnostics-grid" aria-label="Tóm tắt phân tích tự động">
+              <div class="diagnostic"><span>Loại PDF</span><strong id="analysisRepresentation">—</strong></div>
+              <div class="diagnostic"><span>Watermark</span><strong id="analysisWatermark">—</strong></div>
+              <div class="diagnostic"><span>Chiến lược</span><strong id="analysisStrategy">—</strong></div>
+              <div class="diagnostic"><span>Độ tin cậy</span><strong id="analysisConfidence">—</strong></div>
+              <div class="diagnostic"><span>Workers</span><strong id="analysisWorkers">—</strong></div>
+              <div class="diagnostic"><span>Ảnh native</span><strong id="analysisNativeImage">—</strong></div>
+              <div class="diagnostic"><span>OCR</span><strong id="analysisOcrCalls">—</strong></div>
+            </div>
           </article>
 
           <article class="card panel-card grow">
@@ -185,6 +203,21 @@
       </article>
 
       <article class="card settings-card">
+        <h2>Bảo vệ nội dung — Auto V2</h2>
+        <p>Đây chỉ là gợi ý an toàn cho router, không chọn watermark engine trực tiếp.</p>
+        <label class="form-field">
+          <span>Content protection profile</span>
+          <select id="contentProfile">
+            <option value="auto" selected>Auto</option>
+            <option value="math">Toán / biểu đồ</option>
+            <option value="physics">Vật lý</option>
+            <option value="chemistry">Hóa học</option>
+            <option value="ebook">Ebook</option>
+          </select>
+        </label>
+      </article>
+
+      <article class="card settings-card">
         <h2>Tối ưu tốc độ an toàn</h2>
         <p>Các mục này giữ nguyên DPI/chất lượng và không đổi thuật toán xử lý chính.</p>
         <div class="form-grid two">
@@ -196,10 +229,10 @@
       </article>
 
       <article class="card settings-card">
-        <h2>Cài đặt theo loại tài liệu</h2>
-        <p>Phần này dành cho người đã hiểu config. Người dùng phổ thông chỉ cần tab Xử lý.</p>
+        <h2>Tương thích engine cũ</h2>
+        <p>Chỉ dùng để tinh chỉnh fallback legacy. Luồng Auto V2 không chọn engine theo môn học.</p>
         <div class="form-grid two">
-          <label class="form-field"><span>Mode</span><select id="settingsMode"><option value="toan">Toán</option><option value="ly" selected>Lý</option><option value="hoa">Hóa</option><option value="ebook">Ebook</option></select></label>
+          <label class="form-field"><span>Legacy engine config</span><select id="settingsMode"><option value="toan">Toán</option><option value="ly" selected>Lý</option><option value="hoa">Hóa</option><option value="ebook">Ebook</option></select></label>
           <label class="switch-row align-end"><input id="graphSafe" type="checkbox" /><span>Graph-safe</span></label>
           <label class="form-field"><span>Header height</span><input id="headerHeight" type="text" placeholder="vd: 3% hoặc 120" /></label>
           <label class="form-field"><span>Footer height</span><input id="footerHeight" type="text" placeholder="vd: 3% hoặc 120" /></label>
@@ -240,7 +273,7 @@
         <ol>
           <li>Chọn một hoặc nhiều file PDF bằng nút “Chọn file trên máy”.</li>
           <li>Chọn nơi lưu: cùng thư mục file gốc, thư mục khác, hoặc ghi đè file gốc có backup.</li>
-          <li>Chọn loại tài liệu Toán/Lý/Hóa/Ebook và preset tốc độ/chất lượng.</li>
+          <li>Giữ Auto V2 làm mặc định và chọn preset tốc độ/chất lượng; profile nội dung nằm trong Cài đặt nâng cao.</li>
           <li>Bấm “Xử lý PDF”, theo dõi tiến trình và log.</li>
         </ol>
       </article>
@@ -268,7 +301,7 @@
   <footer class="app-footer">
     <span>PDF_Cleaner • Native WebView</span>
     <span>Log kỹ thuật: ui_processing.log</span>
-    <span>Desktop-only • 1 Python process</span>
+    <span>Desktop-only • Auto workers có giới hạn an toàn</span>
   </footer>
 
 

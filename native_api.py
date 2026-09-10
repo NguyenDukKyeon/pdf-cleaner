@@ -99,7 +99,10 @@ class NativeApi:
         return self._safe(choose)
 
     def start_process(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._safe(lambda: self._service().start_process_local(payload))
+        normalized = dict(payload or {})
+        normalized.setdefault("mode", "auto")
+        normalized.setdefault("content_profile", "auto")
+        return self._safe(lambda: self._service().start_process_local(normalized))
 
     def poll_job(self, job_id: str, after_event_id: int = 0) -> dict[str, Any]:
         return self._safe(lambda: self._service().poll_job(job_id, after_event_id))

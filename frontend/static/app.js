@@ -2,7 +2,8 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 let selectedLocalFiles = [];
-let selectedMode = 'ly';
+let selectedMode = 'auto';
+let selectedContentProfile = 'auto';
 let selectedPreset = 'balanced';
 let currentJobId = null;
 let eventCursor = 0;
@@ -11,10 +12,10 @@ let configCache = null;
 let modeConfigCache = {};
 let lastOutputs = [];
 let presetValues = {
-  fast: { hint: 'Tốc độ cao, chất lượng vừa.', dpi: 200, output_dpi: 200, quality: 88, cpu: 1 },
-  balanced: { hint: 'Cân bằng giữa tốc độ và chất lượng.', dpi: 240, output_dpi: 240, quality: 92, cpu: 1 },
-  high_quality: { hint: 'Chất lượng cao nhất, chậm hơn.', dpi: 320, output_dpi: 320, quality: 95, cpu: 1 },
-  safe_mode: { hint: 'Thiết lập bảo thủ, chạy một tiến trình.', dpi: 240, output_dpi: 240, quality: 95, cpu: 1 },
+  fast: { hint: 'Tốc độ cao, chất lượng vừa.', dpi: 200, output_dpi: 200, quality: 88, cpu: 0 },
+  balanced: { hint: 'Cân bằng giữa tốc độ và chất lượng.', dpi: 240, output_dpi: 240, quality: 92, cpu: 0 },
+  high_quality: { hint: 'Chất lượng cao nhất, chậm hơn.', dpi: 320, output_dpi: 320, quality: 95, cpu: 0 },
+  safe_mode: { hint: 'Thiết lập bảo thủ, chạy một worker.', dpi: 240, output_dpi: 240, quality: 95, cpu: 1 },
 };
 
 function sleep(ms) {
@@ -64,6 +65,81 @@ function setProgress(percent, detail, status) {
   $('.progress-wrap').setAttribute('aria-valuenow', String(Math.round(clamped)));
   if (detail) $('#progressDetail').textContent = detail;
   if (status) $('#statusText').textContent = status;
+}
+
+
+const STAGE_SEQUENCE = ['ANALYZING', 'PLANNING', 'PROCESSING', 'VERIFYING'];
+const STAGE_LABELS = {
+  QUEUED: 'Đang chờ',
+  ANALYZING: 'Đang phân tích PDF...',
+  PLANNING: 'Đang chọn chiến lược...',
+  PROCESSING: 'Đang xử lý watermark...',
+  VERIFYING: 'Đang kiểm tra chất lượng...',
+  DONE: 'Hoàn tất',
+  FAILED: 'Xử lý thất bại',
+  CANCELLED: 'Đã hủy',
+};
+
+function updateStageUi(stage) {
+  const current = String(stage || 'QUEUED').toUpperCase();
+  const currentIndex = STAGE_SEQUENCE.indexOf(current);
+  $$('#stageList [data-stage]').forEach((item, index) => {
+    item.classList.remove('active', 'done');
+    if (current === 'DONE' || (currentIndex >= 0 && index < currentIndex)) item.classList.add('done');
+    if (currentIndex === index) item.classList.add('active');
+  });
+  if (STAGE_LABELS[current]) $('#statusText').textContent = STAGE_LABELS[current];
+}
+
+function setDiagnostic(id, value) {
+  const element = $(id);
+  if (element) element.textContent = value == null || value === '' ? '—' : String(value);
+}
+
+function formatConfidence(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '—';
+  return `${Math.round(Math.max(0, Math.min(1, numeric)) * 100)}%`;
+}
+
+function renderDiagnostics(payload = {}) {
+  const report = payload.report || {};
+  const metadata = report.metadata || {};
+  const kind = payload.document_kind || metadata.document_kind;
+  const kindLabels = { vector: 'Vector', hybrid: 'Hybrid', raster: 'Raster', unknown: 'Chưa rõ' };
+  const strategy = payload.strategy || report.strategy;
+  const strategyLabels = {
+    stream_remove: 'Stream remove',
+    vector_remove: 'Vector remove',
+    raster_template: 'Raster template',
+    legacy: 'Legacy fallback',
+  };
+  const confidence = payload.strategy_confidence ?? payload.confidence ?? report.confidence;
+  const watermark = payload.watermark_family || payload.marker || metadata.watermark_family;
+
+  if (kind) setDiagnostic('#analysisRepresentation', kindLabels[String(kind).toLowerCase()] || kind);
+  if (watermark) setDiagnostic('#analysisWatermark', watermark);
+  if (strategy) setDiagnostic('#analysisStrategy', strategyLabels[strategy] || strategy);
+  if (confidence != null) setDiagnostic('#analysisConfidence', formatConfidence(confidence));
+  if (report.worker_count != null) setDiagnostic('#analysisWorkers', report.worker_count);
+  if (report.native_image_pages != null) setDiagnostic('#analysisNativeImage', `${report.native_image_pages} trang`);
+  if (report.ocr_calls != null) setDiagnostic('#analysisOcrCalls', `${report.ocr_calls} lần`);
+}
+
+function renderQcReport(data) {
+  if (!data) return;
+  $('#qcReport').textContent = JSON.stringify(data, null, 2);
+}
+
+function resetRunUi() {
+  updateStageUi('QUEUED');
+  setDiagnostic('#analysisRepresentation', '—');
+  setDiagnostic('#analysisWatermark', '—');
+  setDiagnostic('#analysisStrategy', '—');
+  setDiagnostic('#analysisConfidence', '—');
+  setDiagnostic('#analysisWorkers', '—');
+  setDiagnostic('#analysisNativeImage', '—');
+  setDiagnostic('#analysisOcrCalls', '—');
 }
 
 function setRunning(isRunning) {
@@ -186,9 +262,12 @@ function toggleOutputState() {
   updateStartActionUi();
 }
 
-function selectMode(mode) {
-  selectedMode = mode;
-  $$('#modePicker .pick-card').forEach((card) => card.classList.toggle('selected', card.dataset.mode === mode));
+const CONTENT_PROFILES = new Set(['auto', 'math', 'physics', 'chemistry', 'ebook']);
+
+function selectContentProfile(profile) {
+  selectedContentProfile = CONTENT_PROFILES.has(profile) ? profile : 'auto';
+  const select = $('#contentProfile');
+  if (select) select.value = selectedContentProfile;
 }
 
 function selectPreset(preset, applyValues = true) {
@@ -207,6 +286,7 @@ function selectPreset(preset, applyValues = true) {
 function commonPayload() {
   return {
     mode: selectedMode,
+    content_profile: selectedContentProfile,
     preset: selectedPreset,
     same_folder: $('#sameFolder').checked,
     overwrite: $('#overwrite').checked,
@@ -228,6 +308,8 @@ async function connectEvents(jobId) {
       const result = await nativeCall('poll_job', jobId, eventCursor);
       for (const event of (result.events || [])) handleEvent(event);
       eventCursor = Number(result.last_event_id || eventCursor);
+      if (result.stage) updateStageUi(result.stage);
+      if (result.qc_report) renderQcReport(result.qc_report);
       if (result.terminal) return;
     } catch (err) {
       addLog(`Không đọc được tiến độ: ${err.message}`, 'warning');
@@ -241,20 +323,29 @@ async function connectEvents(jobId) {
 function handleEvent(event) {
   if (event.type === 'log') addLog(event.message, event.level);
   if (event.type === 'status') $('#statusText').textContent = event.message;
+  if (event.type === 'stage') {
+    updateStageUi(event.stage || event.message);
+    renderDiagnostics(event);
+    if (event.percent != null) setProgress(event.percent, $('#progressDetail').textContent, STAGE_LABELS[event.stage] || event.message);
+  }
   if (event.type === 'progress') {
     let detail = 'Đang xử lý...';
     if (event.file_index && event.file_total) {
-      detail = `File ${event.file_index}/${event.file_total} • Trang ${event.page_done || 0}/${event.page_total || 0}`;
+      detail = `File ${event.file_index}/${event.file_total} • Trang ${event.page_done || event.page || 0}/${event.page_total || event.pages || 0}`;
+    } else if (event.page || event.pages) {
+      detail = `Trang ${event.page || 0}/${event.pages || 0}`;
     }
     setProgress(event.percent, detail, event.message);
   }
   if (event.type === 'qc') {
     addLog(event.message, event.level);
-    $('#qcReport').textContent = JSON.stringify(event.summary || {}, null, 2);
+    renderDiagnostics(event);
+    renderQcReport(event.qc_v2 || event.summary || {});
   }
   if (event.type === 'done') {
     addLog(event.message, event.level);
     const cancelled = event.level === 'warning';
+    updateStageUi(cancelled ? 'CANCELLED' : 'DONE');
     setProgress(cancelled ? event.percent : 100, cancelled ? 'Đã hủy' : 'Hoàn tất', event.message);
     setRunning(false);
     lastOutputs = event.outputs || [];
@@ -265,6 +356,7 @@ function handleEvent(event) {
   }
   if (event.type === 'error') {
     addLog(event.message, 'error');
+    updateStageUi('FAILED');
     setRunning(false);
     $('#statusText').textContent = 'Có lỗi • Xem log kỹ thuật nếu cần.';
   }
@@ -275,6 +367,7 @@ function prepareBeforeStart(statusText) {
   currentJobId = null;
   $('#logConsole').innerHTML = '';
   setProgress(0, 'File 0/0 • Trang 0/0', statusText);
+  resetRunUi();
   setOutputButtons(false);
   setRunning(true);
 }
@@ -364,6 +457,7 @@ async function loadConfig() {
   const cfg = configCache.config || {};
   const common = cfg.common || {};
   modeConfigCache = cfg.modes || {};
+  selectContentProfile(common.content_profile || 'auto');
 
   const backendPresets = configCache.presets || {};
   for (const [name, values] of Object.entries(backendPresets)) {
@@ -409,6 +503,7 @@ function buildCommonSettingsPayload() {
     output_pdf_dpi: Number($('#outputDpiSetting').value || 240),
     jpeg_quality: Number($('#jpegQualitySetting').value || 92),
     quality_profile: selectedPreset,
+    content_profile: selectedContentProfile,
     output_grayscale: $('#outputGrayscale').checked,
     same_folder: $('#sameFolder').checked,
     overwrite: $('#overwrite').checked,
@@ -535,7 +630,7 @@ function initEvents() {
   $('#chooseOutputDir').addEventListener('click', chooseOutputDir);
   $('#saveOutputDefaults').addEventListener('click', saveOutputDefaults);
 
-  $$('#modePicker .pick-card').forEach((card) => card.addEventListener('click', () => selectMode(card.dataset.mode)));
+  $('#contentProfile').addEventListener('change', () => selectContentProfile($('#contentProfile').value));
   $$('#presetPicker .preset-card').forEach((card) => card.addEventListener('click', () => selectPreset(card.dataset.preset, true)));
 
   $('#startBtn').addEventListener('click', startProcessing);
@@ -557,7 +652,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   initTheme();
   initEvents();
-  selectMode('ly');
+  selectContentProfile('auto');
+  resetRunUi();
   setOutputButtons(false);
   renderFileList();
   try {
