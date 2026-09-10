@@ -35,7 +35,7 @@
 | 0 | Restore source baseline on feature branch + establish tests/CI harness | IN PROGRESS |
 | 1 | Typed analyzer models + representative-page sampling | COMPLETE |
 | 2 | Structural/raster document analysis + signature registry | COMPLETE |
-| 3 | Deterministic watermark router + processing plans | NOT STARTED |
+| 3 | Deterministic watermark router + processing plans | COMPLETE |
 | 4 | Structural stream/object fast path | NOT STARTED |
 | 5 | Native raster image extraction + synthetic raster fixtures | NOT STARTED |
 | 6 | Document-level raster consensus/template model | NOT STARTED |
@@ -184,11 +184,11 @@ mixed/uncertain medium confidence -> conservative V2 strategy + strict QC
 confidence < 0.70 -> LEGACY
 ```
 
-- [ ] **Step 3.1: Re-read spec/plan.**
-- [ ] **Step 3.2: RED — table-driven router tests for confidence boundaries and evidence combinations.**
-- [ ] **Step 3.3: Verify RED.**
-- [ ] **Step 3.4: GREEN — pure deterministic router with no PDF I/O.**
-- [ ] **Step 3.5: Full suite; plan update; commit.**
+- [x] **Step 3.1: Re-read spec/plan.**
+- [x] **Step 3.2: RED — table-driven router tests for confidence boundaries and evidence combinations.**
+- [x] **Step 3.3: Verify RED.**
+- [x] **Step 3.4: GREEN — pure deterministic router with no PDF I/O.**
+- [x] **Step 3.5: Full suite; plan update; commit.**
 
 ---
 
