@@ -36,7 +36,7 @@
 | 1 | Typed analyzer models + representative-page sampling | COMPLETE |
 | 2 | Structural/raster document analysis + signature registry | COMPLETE |
 | 3 | Deterministic watermark router + processing plans | COMPLETE |
-| 4 | Structural stream/object fast path | NOT STARTED |
+| 4 | Structural stream/object fast path | COMPLETE |
 | 5 | Native raster image extraction + synthetic raster fixtures | NOT STARTED |
 | 6 | Document-level raster consensus/template model | NOT STARTED |
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | NOT STARTED |
@@ -205,12 +205,12 @@ confidence < 0.70 -> LEGACY
 **Interfaces:**
 - `StreamRemoveStrategy.execute(input_pdf: Path, output_pdf: Path, plan: ProcessingPlan, callbacks...) -> StrategyResult`
 
-- [ ] **Step 4.1: Re-read plan/spec.**
-- [ ] **Step 4.2: RED — synthetic PDF contains visible base text plus a repeated isolated `TAILIEUONTHI.NET` overlay stream; after strategy, base text/page count/geometry survive and target stream evidence disappears.**
-- [ ] **Step 4.3: Verify RED.**
-- [ ] **Step 4.4: GREEN — adapt proven structural logic from `core_stream.py`; do not rasterize pages.**
-- [ ] **Step 4.5: Regression: verify unrelated/reused content streams are not removed.**
-- [ ] **Step 4.6: Full suite; plan update; commit.**
+- [x] **Step 4.1: Re-read plan/spec.**
+- [x] **Step 4.2: RED — synthetic PDF contains visible base text plus a repeated isolated `TAILIEUONTHI.NET` overlay stream; after strategy, base text/page count/geometry survive and target stream evidence disappears.**
+- [x] **Step 4.3: Verify RED.**
+- [x] **Step 4.4: GREEN — adapt proven structural logic from `core_stream.py`; do not rasterize pages.**
+- [x] **Step 4.5: Regression: verify unrelated/reused content streams are not removed.**
+- [x] **Step 4.6: Full suite; plan update; commit.**
 
 ---
 

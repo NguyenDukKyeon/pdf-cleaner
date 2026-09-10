@@ -176,7 +176,10 @@ def marker_matches(stream_bytes: bytes, markers: list[str]) -> list[str]:
     low = stream_bytes.lower()
     for marker in markers:
         b = try_encode_ascii(marker)
-        if b and (b in stream_bytes or b.lower() in low):
+        if not b:
+            continue
+        hex_bytes = b.hex().encode("ascii")
+        if b in stream_bytes or b.lower() in low or hex_bytes in low:
             matched.append(marker)
     return matched
 
