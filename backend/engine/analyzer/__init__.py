@@ -1,4 +1,4 @@
-from .document_analyzer import select_sample_pages
+from .document_analyzer import analyze_document, select_sample_pages
 from .models import DocumentKind, DocumentProfile, PageEvidence, WatermarkCandidate
 
 __all__ = [
@@ -6,5 +6,6 @@ __all__ = [
     "DocumentProfile",
     "PageEvidence",
     "WatermarkCandidate",
+    "analyze_document",
     "select_sample_pages",
 ]
