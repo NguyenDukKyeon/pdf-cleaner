@@ -1,6 +1,7 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
+
+import fitz
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,21 +30,25 @@ def find_full_page_image(page, *, min_coverage: float = 0.95) -> FullPageImage |
 
     placements: list[tuple[int, float]] = []
     seen: set[tuple[int, float, float, float, float]] = set()
-    for image in page.get_images(full=True):
-        xref = int(image[0])
-        for rect in page.get_image_rects(xref):
-            key = (
-                xref,
-                round(float(rect.x0), 3),
-                round(float(rect.y0), 3),
-                round(float(rect.x1), 3),
-                round(float(rect.y1), 3),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            coverage = min(1.0, float(rect.get_area()) / page_area)
-            placements.append((xref, coverage))
+    for info in page.get_image_info(xrefs=True):
+        xref = int(info.get("xref") or 0)
+        if xref <= 0:
+            continue
+        try:
+            rect = fitz.Rect(info["bbox"])
+        except Exception:
+            continue
+        key = (
+            xref,
+            round(float(rect.x0), 3),
+            round(float(rect.y0), 3),
+            round(float(rect.x1), 3),
+            round(float(rect.y1), 3),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        placements.append((xref, min(1.0, float(rect.get_area()) / page_area)))
 
     if len(placements) != 1:
         return None
