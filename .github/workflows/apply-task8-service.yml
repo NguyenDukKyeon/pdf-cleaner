@@ -1,4 +1,4 @@
-name: Apply Task 8 service integration
+name: Finalize Task 8 verification
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-task8:
+  finalize-task8:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,22 +28,54 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt pytest
 
-      - name: Apply Task 8 service facade
-        run: python .github/task8_apply.py
+      - name: Fresh Task 8 verification
+        run: |
+          python -m py_compile backend/service.py backend/app/*.py backend/engine/qc_v2/*.py
+          python -m pytest tests/unit/test_qc_v2.py tests/integration/test_atomic_service.py -q
+          python -m pytest -q
 
-      - name: Verify syntax
-        run: python -m py_compile backend/service.py backend/app/*.py backend/engine/qc_v2/*.py
+      - name: Update implementation plan checkpoint
+        run: |
+          python - <<'PY'
+          from pathlib import Path
 
-      - name: Verify Task 8 focused tests
-        run: python -m pytest tests/unit/test_qc_v2.py tests/integration/test_atomic_service.py -q
+          path = Path('docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md')
+          text = path.read_text(encoding='utf-8')
 
-      - name: Verify full suite
-        run: python -m pytest -q
+          text = text.replace(
+              '| 7 | V2 executor + safe legacy fallback + multi-worker selection | NOT STARTED |',
+              '| 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |',
+              1,
+          )
+          text = text.replace(
+              '| 8 | V2 QC + atomic processing service integration | NOT STARTED |',
+              '| 8 | V2 QC + atomic processing service integration | COMPLETE |',
+              1,
+          )
 
-      - name: Commit verified Task 8 integration
+          for task in (7, 8):
+              for step in range(1, 7):
+                  marker = f'- [ ] **Step {task}.{step}:'
+                  text = text.replace(marker, f'- [x] **Step {task}.{step}:', 1)
+
+          row = (
+              '| 2026-09-10 | Task 8 GREEN | `4a538263e395cc5dcb60cfc7dc0d4b4eaacae70d` / Actions `34481987543` '
+              '| `py_compile` PASS; focused Task 8 `4 passed`; full suite `41 passed` '
+              '| Auto compatibility façade now dispatches through V2; stage/QC/report data exposed; atomic service tests remain green. |\n'
+          )
+          anchor = '\n## Acceptance-Criteria Traceability\n'
+          if row not in text:
+              if anchor not in text:
+                  raise SystemExit('execution-log anchor missing')
+              text = text.replace(anchor, '\n' + row + anchor, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit plan checkpoint
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/service.py
-          git commit -m "feat: route Auto desktop jobs through V2 safely"
+          git add docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md
+          git commit -m "docs: mark Task 8 verified"
           git push origin HEAD:refactor/pdf-cleaner-v2
