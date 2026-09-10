@@ -33,7 +33,7 @@
 | Task | Deliverable | Status |
 |---|---|---|
 | 0 | Restore source baseline on feature branch + establish tests/CI harness | IN PROGRESS |
-| 1 | Typed analyzer models + representative-page sampling | NOT STARTED |
+| 1 | Typed analyzer models + representative-page sampling | IN PROGRESS |
 | 2 | Structural/raster document analysis + signature registry | NOT STARTED |
 | 3 | Deterministic watermark router + processing plans | NOT STARTED |
 | 4 | Structural stream/object fast path | NOT STARTED |
@@ -115,8 +115,8 @@ def test_expected_desktop_entrypoints_exist():
 **Interfaces:**
 - Produces: `DocumentKind`, `PageEvidence`, `WatermarkCandidate`, `DocumentProfile`, `select_sample_pages(page_count: int, max_samples: int = 8) -> tuple[int, ...]`
 
-- [ ] **Step 1.1: Re-read spec/plan and mark Task 1 IN PROGRESS.**
-- [ ] **Step 1.2: RED — tests define stable sampling and typed profile invariants.**
+- [x] **Step 1.1: Re-read spec/plan and mark Task 1 IN PROGRESS.**
+- [x] **Step 1.2: RED — tests define stable sampling and typed profile invariants.**
 
 ```python
 def test_select_sample_pages_spreads_samples_across_document():
@@ -128,7 +128,7 @@ def test_document_profile_confidence_is_bounded():
         DocumentProfile(page_count=1, kind=DocumentKind.RASTER, confidence=1.1)
 ```
 
-- [ ] **Step 1.3: Run focused tests and verify expected failures.**
+- [x] **Step 1.3: Run focused tests and verify expected failures.**
 - [ ] **Step 1.4: GREEN — implement only typed models + deterministic sampler.**
 - [ ] **Step 1.5: Run focused and full tests.**
 - [ ] **Step 1.6: Update plan evidence and commit.**
@@ -406,6 +406,8 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Design | `d159a5bbc918986e22c0777518ae8c705efc3a28` | Approved design written to feature branch | No production code changed. |
 | 2026-09-10 | Governance | `9ec5cd02a1d38fc0af5cf248d0ecd947f867f792` | `AGENTS.md` added | Execution gates codified before production refactor. |
 | 2026-09-10 | Task 0 restore attempt | `c20e376a714c90c91d4f6a36953eb5c83d874a5b` / Actions `34414250113` | `xz --test` failed: `Unexpected end of input` | Bootstrap transport on GitHub had only 8 of 17 archive chunks. No production source was changed; restore strategy must be corrected before continuing. |
+
+| 2026-09-10 | Task 1 RED | `2134294e` + `08b5925e` | Local focused pytest collection fails with `ModuleNotFoundError: backend.engine.analyzer` | Expected RED: analyzer package does not exist yet; production code not written before tests. |
 
 ## Acceptance-Criteria Traceability
 
