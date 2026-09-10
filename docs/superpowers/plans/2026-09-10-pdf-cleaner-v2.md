@@ -37,7 +37,7 @@
 | 2 | Structural/raster document analysis + signature registry | COMPLETE |
 | 3 | Deterministic watermark router + processing plans | COMPLETE |
 | 4 | Structural stream/object fast path | COMPLETE |
-| 5 | Native raster image extraction + synthetic raster fixtures | NOT STARTED |
+| 5 | Native raster image extraction + synthetic raster fixtures | COMPLETE |
 | 6 | Document-level raster consensus/template model | NOT STARTED |
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | NOT STARTED |
 | 8 | V2 QC + atomic processing service integration | NOT STARTED |
@@ -227,12 +227,12 @@ confidence < 0.70 -> LEGACY
 - `find_full_page_image(page) -> FullPageImage | None`
 - `extract_native_page_image(doc, page_index) -> NativePageImage | None`
 
-- [ ] **Step 5.1: Re-read plan/spec.**
-- [ ] **Step 5.2: RED — synthetic raster PDF returns original XObject dimensions/bytes without calling page render.**
-- [ ] **Step 5.3: RED — multi-image/vector page returns `None` and explicitly requires render fallback.**
-- [ ] **Step 5.4: Verify RED.**
-- [ ] **Step 5.5: GREEN — implement conservative geometry/coverage checks and native extraction.**
-- [ ] **Step 5.6: Full suite; plan update; commit.**
+- [x] **Step 5.1: Re-read plan/spec.**
+- [x] **Step 5.2: RED — synthetic raster PDF returns original XObject dimensions/bytes without calling page render.**
+- [x] **Step 5.3: RED — multi-image/vector page returns `None` and explicitly requires render fallback.**
+- [x] **Step 5.4: Verify RED.**
+- [x] **Step 5.5: GREEN — implement conservative geometry/coverage checks and native extraction.**
+- [x] **Step 5.6: Full suite; plan update; commit.**
 
 ---
 
