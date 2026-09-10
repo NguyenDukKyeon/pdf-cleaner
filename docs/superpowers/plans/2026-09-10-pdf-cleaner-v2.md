@@ -41,7 +41,7 @@
 | 6 | Document-level raster consensus/template model | NOT STARTED |
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |
 | 8 | V2 QC + atomic processing service integration | COMPLETE |
-| 9 | pywebview API + Auto-first frontend UX/progress/report | NOT STARTED |
+| 9 | pywebview API + Auto-first frontend UX/progress/report | COMPLETE |
 | 10 | Regression benchmark, hardening and legacy-removal decision | NOT STARTED |
 | 11 | Final verification, docs and PR readiness | NOT STARTED |
 
@@ -333,12 +333,12 @@ confidence < 0.70 -> LEGACY
 **Interfaces:**
 - Native API retains `start_process`, `poll_job`, `cancel_job` and adds compatible analysis/report data through existing payloads or a dedicated `analyze_files()` call if required by UX.
 
-- [ ] **Step 9.1: Re-read plan/spec.**
-- [ ] **Step 9.2: RED — contract test requires Auto default and removes subject-as-engine selection from the primary workflow.**
-- [ ] **Step 9.3: RED — event rendering recognizes ANALYZING/PLANNING/PROCESSING/VERIFYING and processing report fields.**
-- [ ] **Step 9.4: Verify RED.**
-- [ ] **Step 9.5: GREEN — implement Auto-first UI; move subject options to Advanced content-protection profile.**
-- [ ] **Step 9.6: Verify native bridge compatibility and full suite; update plan; commit.**
+- [x] **Step 9.1: Re-read plan/spec.**
+- [x] **Step 9.2: RED — contract test requires Auto default and removes subject-as-engine selection from the primary workflow.**
+- [x] **Step 9.3: RED — event rendering recognizes ANALYZING/PLANNING/PROCESSING/VERIFYING and processing report fields.**
+- [x] **Step 9.4: Verify RED.**
+- [x] **Step 9.5: GREEN — implement Auto-first UI; move subject options to Advanced content-protection profile.**
+- [x] **Step 9.6: Verify native bridge compatibility and full suite; update plan; commit.**
 
 ---
 
@@ -412,6 +412,9 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Task 1 GREEN | `ad2595f6` | Local: focused `11 passed`; full suite `12 passed`; `compileall` analyzer PASS | Typed models and deterministic representative-page sampler implemented after verified RED. |
 
 | 2026-09-10 | Task 8 GREEN | `4a538263e395cc5dcb60cfc7dc0d4b4eaacae70d` / Actions `34481987543` | `py_compile` PASS; focused Task 8 `4 passed`; full suite `41 passed` | Auto compatibility façade now dispatches through V2; stage/QC/report data exposed; atomic service tests remain green. |
+
+| 2026-09-10 | Task 9 RED | `d460902bf0586bf68c625ff492012113fe9a5def` / Actions `34483893202` | Task 9 contracts: `3 failed, 42 passed` | Expected RED: primary UI still selected subject engines, no V2 stage diagnostics, and native start payload omitted Auto defaults. |
+| 2026-09-10 | Task 9 GREEN | `39523487a7c36218861d2ac03cd2fbd20ca5cfec` / Actions `34484348250` | `py_compile` PASS; `node --check` PASS; focused Task 9 `4 passed`; full suite `45 passed` | Auto-first desktop workflow, Advanced content-protection profile, V2 stage timeline and report diagnostics implemented while preserving native job bridge. |
 
 ## Acceptance-Criteria Traceability
 
