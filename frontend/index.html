@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF_Cleaner</title>
+  <link rel="stylesheet" href="static/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-logo" aria-hidden="true">✦</div>
+      <div>
+        <div class="brand-title-row">
+          <h1>PDF_Cleaner</h1>
+          <span class="version-badge">Native</span>
+        </div>
+        <p>Làm sạch watermark PDF scan</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="themeToggle" class="icon-btn" title="Đổi giao diện sáng/tối">☾</button>
+      <button id="openToolDir" class="btn btn-secondary hide-mobile">Mở thư mục app</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <nav class="tabs" aria-label="Điều hướng chính">
+      <button class="tab active" data-tab="process">Xử lý PDF</button>
+      <button class="tab" data-tab="settings">Cài đặt nâng cao</button>
+      <button class="tab" data-tab="qc">Kiểm tra chất lượng</button>
+      <button class="tab" data-tab="help">Trợ giúp</button>
+    </nav>
+
+    <section id="process" class="tab-panel active">
+      <div class="process-grid">
+        <div class="workflow-col">
+          <article class="card workflow-card active" aria-label="Bước 1: File PDF đầu vào">
+            <div class="card-head">
+              <span class="step">1</span>
+              <div>
+                <h2>File PDF đầu vào</h2>
+                <p>Chọn một hoặc nhiều file PDF trực tiếp trên máy.</p>
+              </div>
+            </div>
+            <div class="callout info">Ứng dụng desktop xử lý trực tiếp file thật trên máy, không upload và không cần server.</div>
+
+            <div id="localSourcePanel" class="source-panel">
+              <div class="callout info">Chế độ tiện lợi cho app tự dùng: Python chọn đường dẫn thật, lưu cùng thư mục gốc được, và có thể ghi đè file gốc sau khi backup.</div>
+              <label class="form-field code-field compact">
+                <span>Đường dẫn PDF thật:</span>
+                <textarea id="localPathInput" spellcheck="false" placeholder="D:\Tai_lieu\de_thi_goc.pdf" rows="1"></textarea>
+              </label>
+              <div class="button-row">
+                <button id="chooseLocalFiles" class="btn btn-primary">+ Chọn file trên máy</button>
+                <button id="clearFiles" class="btn btn-secondary">Xóa danh sách</button>
+                <span id="fileCount" class="counter">0 file PDF đã chọn</span>
+              </div>
+            </div>
+
+
+
+            <div id="fileList" class="file-list empty">Chưa có file. Bấm “Chọn file trên máy” hoặc nhập đường dẫn PDF.</div>
+          </article>
+
+          <article class="card workflow-card" aria-label="Bước 2: Nơi lưu kết quả">
+            <div class="card-head">
+              <span class="step">2</span>
+              <div>
+                <h2>Nơi lưu kết quả</h2>
+                <p>Mỗi input PDF chỉ xuất đúng 1 file PDF kết quả tương ứng. Mặc định thêm hậu tố <code>_clean</code> để tránh ghi đè file gốc.</p>
+              </div>
+            </div>
+            <label class="switch-row">
+              <input id="sameFolder" type="checkbox" checked />
+              <span id="sameFolderLabel">Lưu cùng thư mục file gốc</span>
+            </label>
+            <label class="form-field">
+              <span>Thư mục lưu kết quả:</span>
+              <div class="input-row">
+                <input id="outputDir" type="text" placeholder="Để trống = thư mục kết quả nội bộ của app" disabled />
+                <button id="chooseOutputDir" type="button" class="btn btn-secondary" disabled>Chọn</button>
+              </div>
+            </label>
+            <div class="form-grid two">
+              <label class="form-field">
+                <span>Hậu tố:</span>
+                <input id="suffix" type="text" value="_clean" />
+              </label>
+              <label class="switch-row align-end">
+                <input id="overwrite" type="checkbox" />
+                <span id="overwriteLabel">Ghi đè file gốc</span>
+              </label>
+            </div>
+            <div id="overwriteWarning" class="callout warning hidden">Cảnh báo: app sẽ tạo file tạm, chạy QC, backup file gốc vào thư mục _backup rồi mới ghi đè. Dù vậy, chỉ bật khi bạn chấp nhận thay thế file thật.</div>
+            <div class="button-row compact-row">
+              <button id="saveOutputDefaults" type="button" class="btn btn-secondary">Lưu tùy chọn lưu/ghi đè làm mặc định</button>
+            </div>
+            <p class="micro-note">Nút này chỉ lưu mặc định cho lần mở sau. Ghi đè file gốc chỉ xảy ra khi bấm nút xử lý ở bước 4.</p>
+          </article>
+
+          <article class="card workflow-card" aria-label="Bước 3: Chế độ xử lý">
+            <div class="card-head">
+              <span class="step">3</span>
+              <div>
+                <h2>Chế độ xử lý</h2>
+                <p>Mặc định dùng Lý - IPCLASS từ engine mới; có thể đổi mode nếu cần.</p>
+              </div>
+            </div>
+            <div id="modePicker" class="picker-grid mode-picker" role="radiogroup" aria-label="Loại tài liệu">
+              <button class="pick-card" data-mode="toan"><span>∑</span><strong>Toán - TDM</strong></button>
+              <button class="pick-card selected" data-mode="ly"><span>⚛</span><strong>Lý - IPCLASS</strong></button>
+              <button class="pick-card" data-mode="hoa"><span>⚗</span><strong>Hóa - TYHH</strong></button>
+              <button class="pick-card" data-mode="ebook"><span>📖</span><strong>Ebook</strong></button>
+            </div>
+            <div id="presetPicker" class="picker-grid preset-picker" role="radiogroup" aria-label="Preset chất lượng">
+              <button class="preset-card" data-preset="fast"><b>Fast</b><small>Tốc độ cao, chất lượng vừa</small></button>
+              <button class="preset-card selected" data-preset="balanced"><b>Balanced</b><small>Cân bằng tốc độ/chất lượng</small></button>
+              <button class="preset-card" data-preset="high_quality"><b>High Quality</b><small>Chất lượng cao nhất</small></button>
+              <button class="preset-card" data-preset="safe_mode"><b>Safe Mode</b><small>An toàn, 1 CPU</small></button>
+            </div>
+            <p id="presetHint" class="hint">Cân bằng giữa tốc độ và chất lượng.</p>
+          </article>
+
+          <article class="card workflow-card" aria-label="Bước 4: Xử lý">
+            <div class="card-head">
+              <span class="step">4</span>
+              <div>
+                <h2>Xử lý</h2>
+                <p>Khi hoàn tất có thể mở ngay file kết quả hoặc thư mục chứa file.</p>
+              </div>
+            </div>
+            <div id="runSafetyHint" class="callout info">Chế độ an toàn: tạo file mới với hậu tố _clean, không đụng file gốc.</div>
+            <div class="button-row action-row">
+              <button id="startBtn" class="btn btn-primary btn-lg">▶ Xử lý PDF</button>
+              <button id="cancelBtn" class="btn btn-danger" disabled>Hủy</button>
+            </div>
+            <div class="button-row">
+              <button id="openFileBtn" class="btn btn-secondary" disabled>Mở file kết quả</button>
+              <button id="openFolderBtn" class="btn btn-secondary" disabled>Mở thư mục kết quả</button>
+            </div>
+            <p id="lastOutput" class="last-output">Kết quả: Chưa có file kết quả.</p>
+          </article>
+        </div>
+
+        <aside class="side-col">
+          <article class="card panel-card">
+            <h2>Tiến trình</h2>
+            <p>Trạng thái được cập nhật theo từng trang để biết chương trình không bị treo.</p>
+            <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="progressBar" class="progress-bar" style="width:0%"></div>
+            </div>
+            <div id="progressDetail" class="progress-detail">File 0/0 • Trang 0/0</div>
+            <div id="statusText" class="status-text">Sẵn sàng • Hãy chọn file PDF để bắt đầu.</div>
+          </article>
+
+          <article class="card panel-card grow">
+            <div class="split-head">
+              <div>
+                <h2>Log kết quả</h2>
+                <p>Thông báo ngắn gọn. Lỗi kỹ thuật đầy đủ được ghi trong <code>ui_processing.log</code>.</p>
+              </div>
+              <button id="clearLog" class="btn btn-ghost">Xóa log</button>
+            </div>
+            <div id="logConsole" class="log-console" role="log" aria-live="polite"></div>
+            <div class="button-row">
+              <button id="openDevLog" class="btn btn-ghost">Mở log kỹ thuật</button>
+            </div>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section id="settings" class="tab-panel narrow">
+      <article class="card settings-card">
+        <h2>Cài đặt chung</h2>
+        <p>Có thể dùng preset ở tab Xử lý, hoặc chỉnh tay tại đây.</p>
+        <div class="form-grid two">
+          <label class="form-field"><span>Poppler path</span><input id="popplerPath" type="text" /></label>
+          <label class="form-field"><span>DPI render</span><input id="dpiSetting" type="number" min="72" max="600" /></label>
+          <label class="form-field"><span>Output DPI</span><input id="outputDpiSetting" type="number" min="72" max="600" /></label>
+          <label class="form-field"><span>JPEG quality</span><input id="jpegQualitySetting" type="range" min="50" max="100" /><output id="jpegQualityOut"></output></label>
+          <label class="switch-row align-end"><input id="outputGrayscale" type="checkbox" /><span>Xuất grayscale</span></label>
+        </div>
+      </article>
+
+      <article class="card settings-card">
+        <h2>Tối ưu tốc độ an toàn</h2>
+        <p>Các mục này giữ nguyên DPI/chất lượng và không đổi thuật toán xử lý chính.</p>
+        <div class="form-grid two">
+          <label class="switch-row align-end"><input id="fastLosslessPng" type="checkbox" /><span>PNG lossless nhanh hơn (compression = 0)</span></label>
+          <label class="switch-row align-end"><input id="skipPreredactNoText" type="checkbox" /><span>Bỏ pre-redact khi PDF scan không có text</span></label>
+          <label class="switch-row align-end"><input id="batchPageLogs" type="checkbox" /><span>Log gọn theo nhóm trang</span></label>
+          <label class="form-field"><span>Ghi log mỗi N trang</span><input id="logEveryPages" type="number" min="1" max="1000" /></label>
+        </div>
+      </article>
+
+      <article class="card settings-card">
+        <h2>Cài đặt theo loại tài liệu</h2>
+        <p>Phần này dành cho người đã hiểu config. Người dùng phổ thông chỉ cần tab Xử lý.</p>
+        <div class="form-grid two">
+          <label class="form-field"><span>Mode</span><select id="settingsMode"><option value="toan">Toán</option><option value="ly" selected>Lý</option><option value="hoa">Hóa</option><option value="ebook">Ebook</option></select></label>
+          <label class="switch-row align-end"><input id="graphSafe" type="checkbox" /><span>Graph-safe</span></label>
+          <label class="form-field"><span>Header height</span><input id="headerHeight" type="text" placeholder="vd: 3% hoặc 120" /></label>
+          <label class="form-field"><span>Footer height</span><input id="footerHeight" type="text" placeholder="vd: 3% hoặc 120" /></label>
+          <label id="lyAggressiveRow" class="switch-row align-end hidden"><input id="lyAggressive" type="checkbox" /><span>Aggressive mode cho Lý/IPCLASS</span></label>
+        </div>
+        <label class="form-field code-field"><span>Thông số riêng của mode (JSON)</span><textarea id="extraJson" spellcheck="false"></textarea></label>
+        <div class="button-row">
+          <button id="saveSettings" class="btn btn-primary">Lưu cấu hình mặc định</button>
+          <button id="reloadSettings" class="btn btn-secondary">Tải lại config</button>
+          <button id="resetSettings" class="btn btn-ghost">Reset mặc định</button>
+        </div>
+        <p class="micro-note">Lưu cấu hình chỉ ghi vào config.json. Nó không xử lý PDF ngay; muốn ghi đè file gốc hãy quay lại tab Xử lý PDF và bấm nút xử lý.</p>
+      </article>
+    </section>
+
+    <section id="qc" class="tab-panel narrow">
+      <article class="card settings-card">
+        <h2>Ngưỡng QC</h2>
+        <div class="form-grid two">
+          <label class="form-field"><span>QC mode</span><select id="qcMode"><option value="full">Đầy đủ</option><option value="quick">Nhanh/lấy mẫu</option><option value="off">Tắt QC</option></select></label>
+          <label class="form-field"><span>QC DPI</span><input id="qcDpi" type="number" min="72" max="600" /></label>
+          <label class="form-field"><span>Số trang tối đa khi QC nhanh</span><input id="qcQuickMaxPages" type="number" min="3" max="100" /></label>
+          <label class="switch-row align-end"><input id="failOnVisualLoss" type="checkbox" /><span>Báo lỗi khi mất nội dung trực quan</span></label>
+          <label class="form-field"><span>Tỷ lệ pixel tối mất tối đa</span><input id="darkLostMax" type="number" step="0.005" min="0" max="0.1" /></label>
+          <label class="form-field"><span>Tỷ lệ pixel tương phản cao mất tối đa</span><input id="contrastLostMax" type="number" step="0.005" min="0" max="0.1" /></label>
+          <label class="form-field"><span>Sai số trung bình tuyệt đối tối đa</span><input id="meanAbsDiffMax" type="text" placeholder="null" /></label>
+        </div>
+      </article>
+      <article class="card report-card">
+        <h2>Báo cáo QC gần nhất</h2>
+        <pre id="qcReport">Chưa có báo cáo QC.</pre>
+      </article>
+    </section>
+
+    <section id="help" class="tab-panel narrow">
+      <article class="card help-card">
+        <h2>Workflow 4 bước</h2>
+        <ol>
+          <li>Chọn một hoặc nhiều file PDF bằng nút “Chọn file trên máy”.</li>
+          <li>Chọn nơi lưu: cùng thư mục file gốc, thư mục khác, hoặc ghi đè file gốc có backup.</li>
+          <li>Chọn loại tài liệu Toán/Lý/Hóa/Ebook và preset tốc độ/chất lượng.</li>
+          <li>Bấm “Xử lý PDF”, theo dõi tiến trình và log.</li>
+        </ol>
+      </article>
+      <article class="card help-card">
+        <h2>Tối ưu tốc độ</h2>
+        <ul>
+          <li>Mặc định đã bật PNG compression = 0 cho output PNG lossless: nhanh hơn nhưng file có thể lớn hơn.</li>
+          <li>QC mặc định kiểm tra đầy đủ theo từng trang; chế độ nhanh chỉ lấy mẫu các trang đại diện.</li>
+          <li>QC nhanh và Tắt QC chỉ nên dùng khi bạn đã tin nguồn PDF/mode đang dùng.</li>
+        </ul>
+      </article>
+      <article class="card help-card">
+        <h2>Lưu ý kỹ thuật</h2>
+        <ul>
+          <li>Giao diện gọi Python trực tiếp qua cầu nối native của pywebview, không dùng FastAPI hay cổng mạng.</li>
+          <li>Ứng dụng xử lý trực tiếp file thật trên máy qua cửa sổ desktop native.</li>
+          <li>Graph-safe luôn được bật cho Toán/TDM.</li>
+          <li>Aggressive mode chỉ dành cho Lý/IPCLASS.</li>
+          <li>QC mặc định cảnh báo khi thấy mất nội dung trực quan; lỗi cấu trúc nghiêm trọng vẫn chặn output.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>PDF_Cleaner • Native WebView</span>
+    <span>Log kỹ thuật: ui_processing.log</span>
+    <span>Desktop-only • 1 Python process</span>
+  </footer>
+
+
+
+  <script src="static/app.js"></script>
+</body>
+</html>
