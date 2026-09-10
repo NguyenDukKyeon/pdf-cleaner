@@ -1,4 +1,4 @@
 from .base import StrategyResult
 from .stream_remove import StreamRemoveStrategy
-
-__all__ = ["StrategyResult", "StreamRemoveStrategy"]
+from .raster_template import RasterTemplateStrategy
+__all__ = ["StrategyResult", "StreamRemoveStrategy", "RasterTemplateStrategy"]
