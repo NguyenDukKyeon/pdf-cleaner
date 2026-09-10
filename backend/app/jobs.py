@@ -1,0 +1,4 @@
+from __future__ import annotations
+from enum import Enum
+class JobStage(str, Enum):
+    QUEUED="QUEUED"; ANALYZING="ANALYZING"; PLANNING="PLANNING"; PROCESSING="PROCESSING"; VERIFYING="VERIFYING"; DONE="DONE"; FAILED="FAILED"; CANCELLED="CANCELLED"
