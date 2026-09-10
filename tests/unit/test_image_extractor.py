@@ -72,3 +72,30 @@ def test_find_full_page_image_rejects_page_with_multiple_competing_images(tmp_pa
         assert find_full_page_image(doc[0]) is None
     finally:
         doc.close()
+
+
+def test_find_full_page_image_deduplicates_same_xref_after_replace_image(tmp_path):
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "output.pdf"
+    payload = _png_bytes((640, 900))
+    replacement = _png_bytes((640, 900))
+
+    doc = fitz.open()
+    page = doc.new_page(width=640, height=900)
+    page.insert_image(page.rect, stream=payload)
+    doc.save(source)
+    doc.close()
+
+    doc = fitz.open(source)
+    xref = doc[0].get_images(full=True)[0][0]
+    doc[0].replace_image(xref, stream=replacement)
+    doc.save(output, garbage=4, deflate=True)
+    doc.close()
+
+    doc = fitz.open(output)
+    try:
+        found = find_full_page_image(doc[0])
+        assert found is not None
+        assert found.coverage >= 0.99
+    finally:
+        doc.close()
