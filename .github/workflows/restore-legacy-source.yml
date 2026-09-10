@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat _restore_v2/00.b64 _restore_v2/01.b64 _restore_v2/02.b64 | base64 -d > /tmp/missing-tdm.tar.xz
+          cat _restore_v2/00.b64 _restore_v2/01a.b64 _restore_v2/01b.b64 _restore_v2/01c.b64 _restore_v2/01d.b64 _restore_v2/02.b64 | base64 -d > /tmp/missing-tdm.tar.xz
           echo '68c00345508aaace38e92897b7ab7ee4298456583039bca74abb00100b20eb0f  /tmp/missing-tdm.tar.xz' | sha256sum -c -
           tar -xJf /tmp/missing-tdm.tar.xz -C .
           test -f backend/engine/tdm_cleaner/config/manager.py
