@@ -1,0 +1,8 @@
+PyMuPDF>=1.23
+opencv-python>=4.8
+numpy>=1.24
+Pillow>=10.0
+pdf2image>=1.16
+psutil>=5.9
+img2pdf>=0.5
+pywebview>=5.0
