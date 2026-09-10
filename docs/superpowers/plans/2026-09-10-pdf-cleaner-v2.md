@@ -34,7 +34,7 @@
 |---|---|---|
 | 0 | Restore source baseline on feature branch + establish tests/CI harness | IN PROGRESS |
 | 1 | Typed analyzer models + representative-page sampling | COMPLETE |
-| 2 | Structural/raster document analysis + signature registry | NOT STARTED |
+| 2 | Structural/raster document analysis + signature registry | COMPLETE |
 | 3 | Deterministic watermark router + processing plans | NOT STARTED |
 | 4 | Structural stream/object fast path | NOT STARTED |
 | 5 | Native raster image extraction + synthetic raster fixtures | NOT STARTED |
@@ -154,12 +154,12 @@ def test_document_profile_confidence_is_bounded():
 - Consumes: path to PDF and sample page indices
 - Produces: populated `DocumentProfile` with text-layer ratio, full-page-image ratio, repeated stream/image evidence and watermark candidates
 
-- [ ] **Step 2.1: Re-read spec/plan; mark IN PROGRESS.**
-- [ ] **Step 2.2: RED — generate synthetic PDFs for (a) repeated overlay stream, (b) one full-page image per page, (c) mixed PDF.**
-- [ ] **Step 2.3: RED — assert analyzer classifies synthetic documents and registry matches aliases without treating alias match as sufficient proof.**
-- [ ] **Step 2.4: Verify tests fail for missing analyzer behavior.**
-- [ ] **Step 2.5: GREEN — implement sampled PyMuPDF analysis using existing `core_stream.py` primitives where safe.**
-- [ ] **Step 2.6: Run focused + full suite, update plan, commit.**
+- [x] **Step 2.1: Re-read spec/plan; mark IN PROGRESS.**
+- [x] **Step 2.2: RED — generate synthetic PDFs for (a) repeated overlay stream, (b) one full-page image per page, (c) mixed PDF.**
+- [x] **Step 2.3: RED — assert analyzer classifies synthetic documents and registry matches aliases without treating alias match as sufficient proof.**
+- [x] **Step 2.4: Verify tests fail for missing analyzer behavior.**
+- [x] **Step 2.5: GREEN — implement sampled PyMuPDF analysis using existing `core_stream.py` primitives where safe.**
+- [x] **Step 2.6: Run focused + full suite, update plan, commit.**
 
 ---
 
