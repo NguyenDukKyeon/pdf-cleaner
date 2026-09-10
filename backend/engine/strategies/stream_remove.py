@@ -29,6 +29,7 @@ class StreamRemoveStrategy:
         plan: ProcessingPlan,
         *,
         log: Callable[[str], None] | None = None,
+        progress: Callable[..., None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ) -> StrategyResult:
         if plan.strategy is not StrategyKind.STREAM_REMOVE:
