@@ -129,3 +129,4 @@ def process_job(job_id: str, params: dict[str, Any]) -> None:
           git add backend/service.py
           git commit -m "feat: route Auto desktop jobs through V2 safely"
           git push origin HEAD:refactor/pdf-cleaner-v2
+# retrigger after verified baseline restoration
