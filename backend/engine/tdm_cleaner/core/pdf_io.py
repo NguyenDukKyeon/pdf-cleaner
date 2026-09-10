@@ -99,4 +99,87 @@ def px_rect_to_pdf_rect(x: int, y: int, w: int, h: int, img_w: int, img_h: int, 
     return fitz.Rect(
         page_rect.x0 + x * sx,
         page_rect.y0 + y * sy,
-        page_rect.x0 + (x + w)
+        page_rect.x0 + (x + w) * sx,
+        page_rect.y0 + (y + h) * sy,
+    )
+
+
+def _insert_patch(page: fitz.Page, patch: PagePatch, result: PageResult) -> None:
+    rect = px_rect_to_pdf_rect(patch.x_px, patch.y_px, patch.w_px, patch.h_px, result.img_w, result.img_h, page.rect)
+    page.insert_image(rect, stream=patch.image_bytes, keep_proportion=False, overlay=True)
+
+
+def _draw_vector_line(page: fitz.Page, seg: VectorLineSegment, result: PageResult) -> None:
+    sx = page.rect.width / max(1, float(result.img_w))
+    sy = page.rect.height / max(1, float(result.img_h))
+    p0 = fitz.Point(page.rect.x0 + seg.x0_px * sx, page.rect.y0 + seg.y0_px * sy)
+    p1 = fitz.Point(page.rect.x0 + seg.x1_px * sx, page.rect.y0 + seg.y1_px * sy)
+    width_pt = max(0.1, float(seg.width_px) * (sx + sy) * 0.5)
+    color = tuple(float(max(0.0, min(1.0, c))) for c in seg.rgb)
+    try:
+        shape = page.new_shape()
+        shape.draw_line(p0, p1)
+        dashes = "[1 2] 0" if seg.dashed else None
+        try:
+            shape.finish(color=color, width=width_pt, dashes=dashes, stroke_opacity=float(seg.opacity))
+        except TypeError:
+            shape.finish(color=color, width=width_pt, dashes=dashes)
+        shape.commit(overlay=True)
+    except Exception:
+        try:
+            page.draw_line(p0, p1, color=color, width=width_pt, overlay=True)
+        except Exception:
+            pass
+
+
+def insert_page(out_doc: fitz.Document, result: PageResult) -> None:
+    """Legacy-compatible full-raster insertion."""
+    page = out_doc.new_page(width=result.width_pt, height=result.height_pt)
+    if not result.image_bytes:
+        raise RuntimeError("Full raster result không có image_bytes.")
+    page.insert_image(page.rect, stream=result.image_bytes, keep_proportion=False)
+
+
+def insert_page_result(out_doc: fitz.Document, src_doc: fitz.Document | None, result: PageResult) -> None:
+    """Insert a processed result, preserving the source page for hybrid mode."""
+    if result.mode == "hybrid":
+        if src_doc is None:
+            raise RuntimeError("Hybrid result cần source PDF document để giữ layout gốc.")
+        out_doc.insert_pdf(src_doc, from_page=result.page_index, to_page=result.page_index)
+        page = out_doc[-1]
+        for patch in result.patches:
+            _insert_patch(page, patch, result)
+        for seg in result.vector_lines:
+            _draw_vector_line(page, seg, result)
+        return
+    insert_page(out_doc, result)
+
+
+def save_pdf_atomic(out_doc: fitz.Document, output_pdf: Path, *, replace: bool = True) -> Path:
+    """Write PDF through a temporary file and optionally replace the final path.
+
+    For normal exports, ``replace=True`` saves to a sibling temporary PDF and then
+    atomically replaces ``output_pdf``.  For true in-place overwrite, callers can
+    pass ``replace=False``, close every document handle that is still reading the
+    original file, then call ``os.replace(tmp_path, output_pdf)`` themselves.
+    This avoids Windows failing with PermissionError while the source PDF is open.
+    """
+    output_pdf = output_pdf.expanduser().resolve()
+    output_pdf.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=output_pdf.stem + "_", suffix=".tmp.pdf", dir=str(output_pdf.parent))
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        out_doc.save(str(tmp_path), garbage=3, deflate=True)
+        if not tmp_path.exists() or tmp_path.stat().st_size <= 0:
+            raise RuntimeError(f"File tạm rỗng sau khi save: {tmp_path}")
+        if replace:
+            os.replace(str(tmp_path), str(output_pdf))
+            return output_pdf
+        return tmp_path
+    finally:
+        if replace and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
