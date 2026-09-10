@@ -1,0 +1,150 @@
+name: Apply and verify Task 4 GREEN
+
+on:
+  push:
+    branches:
+      - refactor/pdf-cleaner-v2
+    paths:
+      - .github/workflows/task4-green.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-green:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/pdf-cleaner-v2
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest
+      - name: Apply structural strategy implementation
+        shell: bash
+        run: |
+          mkdir -p backend/engine/strategies
+          cat > backend/engine/strategies/base.py <<'PY'
+          from __future__ import annotations
+
+          from dataclasses import dataclass
+
+
+          @dataclass(frozen=True, slots=True)
+          class StrategyResult:
+              removed_items: int = 0
+              changed_pages: int = 0
+              rasterized_pages: int = 0
+              saved_to: str = ""
+          PY
+          cat > backend/engine/strategies/stream_remove.py <<'PY'
+          from __future__ import annotations
+
+          from pathlib import Path
+          from typing import Callable
+
+          from backend.engine.core_stream import clean_pdf_stream_safe
+          from backend.engine.router.models import ProcessingPlan, StrategyKind
+          from backend.engine.signatures.registry import SignatureRegistry
+
+          from .base import StrategyResult
+
+
+          class StreamRemoveStrategy:
+              def __init__(self, registry: SignatureRegistry | None = None):
+                  self._registry = registry or SignatureRegistry.load_default()
+
+              def _markers_for_plan(self, plan: ProcessingPlan) -> list[str]:
+                  marker_ids = {operation.marker for operation in plan.operations if operation.marker}
+                  aliases: list[str] = []
+                  for signature in self._registry.signatures:
+                      if signature.id in marker_ids:
+                          aliases.extend(signature.aliases)
+                  return aliases
+
+              def execute(
+                  self,
+                  input_pdf: Path,
+                  output_pdf: Path,
+                  plan: ProcessingPlan,
+                  *,
+                  log: Callable[[str], None] | None = None,
+                  should_cancel: Callable[[], bool] | None = None,
+              ) -> StrategyResult:
+                  if plan.strategy is not StrategyKind.STREAM_REMOVE:
+                      raise ValueError("StreamRemoveStrategy requires a STREAM_REMOVE plan")
+                  markers = self._markers_for_plan(plan)
+                  if not markers:
+                      raise ValueError("STREAM_REMOVE plan has no known watermark signature markers")
+                  result = clean_pdf_stream_safe(
+                      input_pdf=input_pdf,
+                      output_pdf=output_pdf,
+                      markers=markers,
+                      allow_stream_auto=False,
+                      log=log,
+                      should_cancel=should_cancel,
+                  )
+                  return StrategyResult(
+                      removed_items=int(result["removed_streams"]),
+                      changed_pages=int(result["changed_pages"]),
+                      rasterized_pages=int(result.get("raster_pages", 0)),
+                      saved_to=str(result["saved_to"]),
+                  )
+          PY
+          cat > backend/engine/strategies/__init__.py <<'PY'
+          from .base import StrategyResult
+          from .stream_remove import StreamRemoveStrategy
+
+          __all__ = ["StrategyResult", "StreamRemoveStrategy"]
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/engine/core_stream.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''def marker_matches(stream_bytes: bytes, markers: list[str]) -> list[str]:\n    matched: list[str] = []\n    low = stream_bytes.lower()\n    for marker in markers:\n        b = try_encode_ascii(marker)\n        if b and (b in stream_bytes or b.lower() in low):\n            matched.append(marker)\n    return matched\n'''
+          new = '''def marker_matches(stream_bytes: bytes, markers: list[str]) -> list[str]:\n    matched: list[str] = []\n    low = stream_bytes.lower()\n    for marker in markers:\n        b = try_encode_ascii(marker)\n        if not b:\n            continue\n        hex_bytes = b.hex().encode("ascii")\n        if b in stream_bytes or b.lower() in low or hex_bytes in low:\n            matched.append(marker)\n    return matched\n'''
+          if old not in s:
+              raise SystemExit('expected marker_matches baseline not found')
+          p.write_text(s.replace(old, new), encoding='utf-8')
+          PY
+      - name: Verify Task 4 GREEN
+        run: |
+          python -m pytest tests/integration/test_stream_remove_strategy.py -q
+          python -m pytest -q
+          python -m compileall -q backend/engine/strategies backend/engine/core_stream.py
+      - name: Update plan checkpoint
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('| 4 | Structural stream/object fast path | NOT STARTED |', '| 4 | Structural stream/object fast path | COMPLETE |')
+          for step in ('4.1', '4.2', '4.3', '4.4', '4.5', '4.6'):
+              s = s.replace(f'- [ ] **Step {step}:', f'- [x] **Step {step}:')
+          rows = (
+              '| 2026-09-10 | Task 4 RED | `110628e5` | Local integration collection failed with `ModuleNotFoundError: backend.engine.strategies` | Expected RED committed before strategy implementation. |\n'
+              '| 2026-09-10 | Task 4 DEBUG/GREEN | workflow gate | Root cause: PDF text marker encoded as hex string; local Task4 `2 passed`, full `27 passed` | Added exact ASCII-hex marker matching and structural adapter; no page rasterization. |\n'
+          )
+          marker = '## Acceptance-Criteria Traceability'
+          pos = s.index(marker)
+          for row in rows:
+              if row not in s:
+                  s = s[:pos] + row + '\n' + s[pos:]
+                  pos += len(row) + 1
+          p.write_text(s, encoding='utf-8')
+          PY
+          rm -f .github/workflows/task4-green.yml
+      - name: Commit verified GREEN
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add structural stream removal strategy"
+          git push origin HEAD:refactor/pdf-cleaner-v2
