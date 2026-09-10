@@ -1,0 +1,214 @@
+from pathlib import Path
+
+p = Path("backend/service.py")
+s = p.read_text(encoding="utf-8")
+
+
+def one(old: str, new: str) -> None:
+    global s
+    if old not in s:
+        raise SystemExit("missing patch anchor: " + old[:100])
+    s = s.replace(old, new, 1)
+
+
+one(
+    'DOCUMENT_TYPES = {\n    "toan": "Toán - TDM",',
+    'DOCUMENT_TYPES = {\n    "auto": "Tự động (V2)",\n    "toan": "Toán - TDM",',
+)
+one(
+    '            # Desktop-only build intentionally stays in one Python process.\n            "cpu": 1,',
+    '            # V2 uses RAM/CPU-aware auto workers; safe_mode stays single-process.\n            "cpu": 1 if str(name) == "safe_mode" else 0,',
+)
+one(
+    '    status: str = "queued"\n    percent: float = 0.0',
+    '    status: str = "queued"\n    stage: str = "QUEUED"\n    percent: float = 0.0',
+)
+one(
+    '            "status": self.status,\n            "percent": round(float(self.percent), 2),',
+    '            "status": self.status,\n            "stage": self.stage,\n            "percent": round(float(self.percent), 2),',
+)
+one(
+    '        "quality": _value("quality", values["quality"]),\n        # Hard requirement for this personal desktop build: no worker Python processes.\n        "cpu": 1,',
+    '        "quality": _value("quality", values["quality"]),\n        "cpu": max(0, _value("cpu", values["cpu"])),',
+)
+
+auto_code = r'''
+
+# Keep the proven subject-specific process_job intact and dispatch Auto through V2.
+_process_job_legacy = process_job
+
+
+def _process_job_auto(job_id: str, params: dict[str, Any]) -> None:
+    from backend.app.jobs import JobStage
+    from backend.app.processing_service import process_document_v2
+
+    job = JOBS[job_id]
+    try:
+        job.status = "running"
+        job.stage = JobStage.ANALYZING.value
+        preset = str(params.get("preset") or "balanced").strip().lower()
+        run_config = _resolve_run_config(preset, params)
+        total_files = len(job.uploaded_files)
+        output_paths = _build_output_paths(
+            job,
+            job.uploaded_files,
+            same_folder=bool(params.get("same_folder", True)),
+            overwrite=bool(params.get("overwrite", False)),
+            suffix=str(params.get("suffix") or "_clean"),
+            output_dir=str(params.get("output_dir") or "").strip() or None,
+        )
+        with CONFIG_LOCK:
+            config_data = config_manager().data
+        qc_cfg = _qc_settings(config_data)
+        completed: list[Path] = []
+        job.emit(
+            "log",
+            f"Auto V2 • {total_files} file • CPU={'auto' if run_config['cpu'] == 0 else run_config['cpu']}",
+        )
+
+        for idx, input_pdf in enumerate(job.uploaded_files, start=1):
+            if job.cancel_event.is_set():
+                break
+
+            output_path = output_paths[idx - 1]
+            base_percent = (idx - 1) / max(1, total_files) * 100.0
+            file_weight = 100.0 / max(1, total_files)
+            stage_fraction = {
+                JobStage.ANALYZING: 0.08,
+                JobStage.PLANNING: 0.18,
+                JobStage.PROCESSING: 0.28,
+                JobStage.VERIFYING: 0.88,
+                JobStage.DONE: 1.0,
+            }
+
+            def on_stage(stage: JobStage, **data: Any) -> None:
+                job.stage = stage.value
+                job.percent = base_percent + file_weight * stage_fraction.get(stage, 0.0)
+                payload: dict[str, Any] = {
+                    "file_index": idx,
+                    "file_total": total_files,
+                }
+                profile = data.get("profile")
+                plan = data.get("plan")
+                report = data.get("report")
+                qc = data.get("qc")
+                if profile is not None:
+                    payload.update(
+                        document_kind=getattr(profile.kind, "value", str(profile.kind)),
+                        confidence=float(profile.confidence),
+                    )
+                if plan is not None:
+                    payload.update(
+                        strategy=getattr(plan.strategy, "value", str(plan.strategy)),
+                        strategy_confidence=float(plan.confidence),
+                        strict_qc=bool(plan.requires_strict_qc),
+                    )
+                if report is not None:
+                    payload["report"] = report.as_dict()
+                if qc is not None:
+                    payload["qc_v2"] = qc.as_dict()
+                job.emit("stage", stage.value, **payload)
+
+            def on_progress(done: int, total: int, message: str = "") -> None:
+                job.percent = base_percent + file_weight * (
+                    0.28 + 0.58 * done / max(1, total)
+                )
+                job.emit(
+                    "progress",
+                    message or f"Trang {done}/{total}",
+                    page=done,
+                    pages=total,
+                )
+
+            result = process_document_v2(
+                input_pdf,
+                output_path,
+                options={
+                    "content_profile": str(params.get("content_profile") or "auto"),
+                    "workers": int(run_config["cpu"]),
+                    "dpi": int(run_config["dpi"]),
+                    "output_dpi": int(run_config["output_dpi"]),
+                    "quality": int(run_config["quality"]),
+                    "qc_dpi": int(qc_cfg["dpi"]),
+                    "allow_legacy_fallback": True,
+                },
+                callbacks={
+                    "log": lambda message: job.emit("log", str(message)),
+                    "progress": on_progress,
+                    "should_cancel": job.cancel_event.is_set,
+                },
+                on_stage=on_stage,
+                backup_existing=bool(params.get("overwrite", False)),
+            )
+            job.qc_report = result.qc.as_dict()
+            if output_path.exists():
+                completed.append(output_path)
+                job.outputs = completed[:]
+            job.emit(
+                "qc",
+                "V2 QC PASS",
+                level="success",
+                report=result.report.as_dict(),
+                qc_v2=result.qc.as_dict(),
+            )
+
+        job.outputs = completed
+        if job.cancel_event.is_set():
+            job.status = "cancelled"
+            job.stage = JobStage.CANCELLED.value
+            job.status_text = f"Đã hủy. Đã xuất {len(completed)} file trước khi dừng."
+            job.emit(
+                "done",
+                job.status_text,
+                level="warning",
+                outputs=[str(p) for p in completed],
+            )
+        else:
+            job.status = "done"
+            job.stage = JobStage.DONE.value
+            job.percent = 100
+            job.status_text = f"Hoàn tất • Đã xuất {len(completed)} file."
+            job.emit(
+                "done",
+                job.status_text,
+                level="success",
+                outputs=[str(p) for p in completed],
+            )
+    except Exception as exc:
+        job.status = "error"
+        job.stage = JobStage.FAILED.value
+        job.error = str(exc)
+        job.status_text = "Có lỗi trong quá trình xử lý. Xem log kỹ thuật để biết chi tiết."
+        detail = traceback.format_exc()
+        write_tech_log(f"job={job.id} TRACEBACK\n{detail}")
+        job.emit("error", f"Lỗi: {exc}", level="error", detail=detail)
+    finally:
+        job.done_at = now_iso()
+
+
+def process_job(job_id: str, params: dict[str, Any]) -> None:
+    mode = str(params.get("mode") or "auto").strip().lower()
+    if mode == "auto":
+        return _process_job_auto(job_id, params)
+    return _process_job_legacy(job_id, params)
+'''
+
+anchor = "\n\n\n\ndef get_config() -> dict[str, Any]:\n"
+if anchor not in s:
+    raise SystemExit("missing get_config anchor")
+s = s.replace(anchor, auto_code + anchor, 1)
+
+one(
+    '        "mode": str(payload.get("mode") or "ly"),',
+    '        "mode": str(payload.get("mode") or "auto"),\n        "content_profile": str(payload.get("content_profile") or "auto"),',
+)
+one(
+    '        # Accepted for backward-compatible UI payloads but ignored by _resolve_run_config.\n        "cpu": _parse_int_value(payload.get("cpu")),',
+    '        "cpu": _parse_int_value(payload.get("cpu")),',
+)
+one(
+    '        "status": job.status,\n        "terminal": job.status in {"done", "error", "cancelled"},',
+    '        "status": job.status,\n        "stage": job.stage,\n        "percent": round(float(job.percent), 2),\n        "qc_report": jsonable(job.qc_report),\n        "terminal": job.status in {"done", "error", "cancelled"},',
+)
+
+p.write_text(s, encoding="utf-8")
