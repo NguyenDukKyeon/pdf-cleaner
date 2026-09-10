@@ -39,8 +39,8 @@
 | 4 | Structural stream/object fast path | COMPLETE |
 | 5 | Native raster image extraction + synthetic raster fixtures | COMPLETE |
 | 6 | Document-level raster consensus/template model | NOT STARTED |
-| 7 | V2 executor + safe legacy fallback + multi-worker selection | NOT STARTED |
-| 8 | V2 QC + atomic processing service integration | NOT STARTED |
+| 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |
+| 8 | V2 QC + atomic processing service integration | COMPLETE |
 | 9 | pywebview API + Auto-first frontend UX/progress/report | NOT STARTED |
 | 10 | Regression benchmark, hardening and legacy-removal decision | NOT STARTED |
 | 11 | Final verification, docs and PR readiness | NOT STARTED |
@@ -282,12 +282,12 @@ confidence < 0.70 -> LEGACY
 - `plan_document(profile, options) -> ProcessingPlan`
 - `execute_plan(input_path, output_path, plan, callbacks) -> ProcessingReport`
 
-- [ ] **Step 7.1: Re-read plan/spec.**
-- [ ] **Step 7.2: RED — auto worker selection can exceed one when CPU/RAM/page count permit, remains one when constraints require it.**
-- [ ] **Step 7.3: RED — a V2 strategy failure must not corrupt output and routes to legacy only when policy allows.**
-- [ ] **Step 7.4: Verify RED.**
-- [ ] **Step 7.5: GREEN — implement executor/report/fallback; document-level model created once before page workers.**
-- [ ] **Step 7.6: Full suite; plan update; commit.**
+- [x] **Step 7.1: Re-read plan/spec.**
+- [x] **Step 7.2: RED — auto worker selection can exceed one when CPU/RAM/page count permit, remains one when constraints require it.**
+- [x] **Step 7.3: RED — a V2 strategy failure must not corrupt output and routes to legacy only when policy allows.**
+- [x] **Step 7.4: Verify RED.**
+- [x] **Step 7.5: GREEN — implement executor/report/fallback; document-level model created once before page workers.**
+- [x] **Step 7.6: Full suite; plan update; commit.**
 
 ---
 
@@ -310,12 +310,12 @@ confidence < 0.70 -> LEGACY
 - `validate_output(input_pdf, output_pdf, report) -> QCReport`
 - service job stages: `QUEUED`, `ANALYZING`, `PLANNING`, `PROCESSING`, `VERIFYING`, `DONE`
 
-- [ ] **Step 8.1: Re-read plan/spec.**
-- [ ] **Step 8.2: RED — QC rejects page-count/geometry loss and excessive changes outside watermark mask.**
-- [ ] **Step 8.3: RED — failed QC leaves final/source untouched and cleans staging.**
-- [ ] **Step 8.4: Verify RED.**
-- [ ] **Step 8.5: GREEN — integrate pipeline V2 through focused app services while keeping `backend/service.py` compatibility API.**
-- [ ] **Step 8.6: Full suite; plan update; commit.**
+- [x] **Step 8.1: Re-read plan/spec.**
+- [x] **Step 8.2: RED — QC rejects page-count/geometry loss and excessive changes outside watermark mask.**
+- [x] **Step 8.3: RED — failed QC leaves final/source untouched and cleans staging.**
+- [x] **Step 8.4: Verify RED.**
+- [x] **Step 8.5: GREEN — integrate pipeline V2 through focused app services while keeping `backend/service.py` compatibility API.**
+- [x] **Step 8.6: Full suite; plan update; commit.**
 
 ---
 
@@ -410,6 +410,8 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Task 1 RED | `2134294e` + `08b5925e` | Local focused pytest collection fails with `ModuleNotFoundError: backend.engine.analyzer` | Expected RED: analyzer package does not exist yet; production code not written before tests. |
 
 | 2026-09-10 | Task 1 GREEN | `ad2595f6` | Local: focused `11 passed`; full suite `12 passed`; `compileall` analyzer PASS | Typed models and deterministic representative-page sampler implemented after verified RED. |
+
+| 2026-09-10 | Task 8 GREEN | `4a538263e395cc5dcb60cfc7dc0d4b4eaacae70d` / Actions `34481987543` | `py_compile` PASS; focused Task 8 `4 passed`; full suite `41 passed` | Auto compatibility façade now dispatches through V2; stage/QC/report data exposed; atomic service tests remain green. |
 
 ## Acceptance-Criteria Traceability
 
