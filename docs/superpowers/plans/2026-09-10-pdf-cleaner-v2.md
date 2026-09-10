@@ -33,7 +33,7 @@
 | Task | Deliverable | Status |
 |---|---|---|
 | 0 | Restore source baseline on feature branch + establish tests/CI harness | IN PROGRESS |
-| 1 | Typed analyzer models + representative-page sampling | IN PROGRESS |
+| 1 | Typed analyzer models + representative-page sampling | COMPLETE |
 | 2 | Structural/raster document analysis + signature registry | NOT STARTED |
 | 3 | Deterministic watermark router + processing plans | NOT STARTED |
 | 4 | Structural stream/object fast path | NOT STARTED |
@@ -129,9 +129,9 @@ def test_document_profile_confidence_is_bounded():
 ```
 
 - [x] **Step 1.3: Run focused tests and verify expected failures.**
-- [ ] **Step 1.4: GREEN — implement only typed models + deterministic sampler.**
-- [ ] **Step 1.5: Run focused and full tests.**
-- [ ] **Step 1.6: Update plan evidence and commit.**
+- [x] **Step 1.4: GREEN — implement only typed models + deterministic sampler.**
+- [x] **Step 1.5: Run focused and full tests.**
+- [x] **Step 1.6: Update plan evidence and commit.**
 
 ---
 
@@ -408,6 +408,8 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Task 0 restore attempt | `c20e376a714c90c91d4f6a36953eb5c83d874a5b` / Actions `34414250113` | `xz --test` failed: `Unexpected end of input` | Bootstrap transport on GitHub had only 8 of 17 archive chunks. No production source was changed; restore strategy must be corrected before continuing. |
 
 | 2026-09-10 | Task 1 RED | `2134294e` + `08b5925e` | Local focused pytest collection fails with `ModuleNotFoundError: backend.engine.analyzer` | Expected RED: analyzer package does not exist yet; production code not written before tests. |
+
+| 2026-09-10 | Task 1 GREEN | `ad2595f6` | Local: focused `11 passed`; full suite `12 passed`; `compileall` analyzer PASS | Typed models and deterministic representative-page sampler implemented after verified RED. |
 
 ## Acceptance-Criteria Traceability
 
