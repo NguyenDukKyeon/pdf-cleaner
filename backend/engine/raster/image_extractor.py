@@ -28,9 +28,20 @@ def find_full_page_image(page, *, min_coverage: float = 0.95) -> FullPageImage |
         return None
 
     placements: list[tuple[int, float]] = []
+    seen: set[tuple[int, float, float, float, float]] = set()
     for image in page.get_images(full=True):
         xref = int(image[0])
         for rect in page.get_image_rects(xref):
+            key = (
+                xref,
+                round(float(rect.x0), 3),
+                round(float(rect.y0), 3),
+                round(float(rect.x1), 3),
+                round(float(rect.y1), 3),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
             coverage = min(1.0, float(rect.get_area()) / page_area)
             placements.append((xref, coverage))
 
