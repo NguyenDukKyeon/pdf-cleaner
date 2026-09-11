@@ -25,9 +25,25 @@ def _make_pdf(path: Path):
     doc.save(path); doc.close()
 
 
+def _make_large_compressible_pdf(path: Path) -> None:
+    doc = fitz.open()
+    for seed in range(5):
+        image = np.full((1200, 900, 3), 252, dtype=np.uint8)
+        image[80 + seed * 140 : 84 + seed * 140, 80:700] = 20
+        for x in range(420, 850):
+            y = int(1100 - 0.65 * (x - 420))
+            image[max(0, y - 5) : min(1200, y + 6), x : x + 3] = 200
+        payload = io.BytesIO()
+        Image.fromarray(image).save(payload, format='PNG', compress_level=6)
+        page = doc.new_page(width=450, height=600)
+        page.insert_image(page.rect, stream=payload.getvalue())
+    doc.save(path, deflate=True); doc.close()
+
+
 def test_raster_template_strategy_learns_once_and_uses_native_images(tmp_path, monkeypatch):
     src = tmp_path / 'src.pdf'; out = tmp_path / 'out.pdf'; _make_pdf(src)
     monkeypatch.setattr(fitz.Page, 'get_pixmap', lambda *a, **k: (_ for _ in ()).throw(AssertionError('render forbidden')))
+    monkeypatch.setattr(fitz.Page, 'replace_image', lambda *a, **k: (_ for _ in ()).throw(AssertionError('in-place image replacement forbidden')))
     plan = ProcessingPlan(StrategyKind.RASTER_TEMPLATE, .9, (ProcessingOperation('learn_and_apply_raster_template', 'tailieuonthi'),), True)
     result = RasterTemplateStrategy().execute(src, out, plan)
     assert out.exists(); assert result.rasterized_pages == 0; assert result.native_image_pages == 5
@@ -40,3 +56,11 @@ def test_raster_template_strategy_learns_once_and_uses_native_images(tmp_path, m
     aft = np.array(Image.open(io.BytesIO(after)).convert('RGB'))
     assert aft[125:170, 115:215].mean() > bef[125:170, 115:215].mean()
     assert aft[20:23, 30:150].mean() < 60
+
+
+def test_raster_template_strategy_does_not_explode_output_size(tmp_path):
+    src = tmp_path / 'large-compressible.pdf'; out = tmp_path / 'large-compressible-clean.pdf'
+    _make_large_compressible_pdf(src)
+    plan = ProcessingPlan(StrategyKind.RASTER_TEMPLATE, .9, (ProcessingOperation('learn_and_apply_raster_template', 'tailieuonthi'),), True)
+    RasterTemplateStrategy().execute(src, out, plan)
+    assert out.stat().st_size <= src.stat().st_size * 4
