@@ -42,7 +42,7 @@
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |
 | 8 | V2 QC + atomic processing service integration | COMPLETE |
 | 9 | pywebview API + Auto-first frontend UX/progress/report | COMPLETE |
-| 10 | Regression benchmark, hardening and legacy-removal decision | NOT STARTED |
+| 10 | Regression benchmark, hardening and legacy-removal decision | READY FOR FINAL CI |
 | 11 | Final verification, docs and PR readiness | NOT STARTED |
 
 ---
@@ -368,16 +368,16 @@ outside-mask content change
 output file size
 ```
 
-- [ ] **Step 10.1: Re-read plan/spec.**
-- [ ] **Step 10.2: RED — end-to-end synthetic tests assert correct route + valid output for vector, raster and hybrid documents.**
-- [ ] **Step 10.3: Verify RED, then implement any minimum hardening required.**
+- [x] **Step 10.1: Re-read plan/spec.**
+- [x] **Step 10.2: RED — end-to-end synthetic tests assert correct route + valid output for vector, raster and hybrid documents.**
+- [x] **Step 10.3: Verify RED, then implement any minimum hardening required.**
   - For high-confidence `tailieuonthi` raster documents, benchmark and, if superior, reuse the proven TDM V7 cleanup as a signature-specific repair primitive. This remains Auto/signature routing, not subject routing.
   - Run TDM-guided page repair in short-lived isolated workers; transfer only trusted header/footer/diagonal cleanup back to native pixels. Preserve page geometry and reject unsafe extra page structure.
   - Add a visual-residual quality metric/gate so a visually obvious watermark cannot pass only because outside-mask change is low.
-- [ ] **Step 10.4: Run local benchmark against the four owner-provided PDF inputs without committing them.** Two uploads may be byte-identical; still run both and record that fact rather than silently collapsing the cases.
-- [ ] **Step 10.5: Record measured legacy vs V2 results. Do not infer missing metrics.**
-- [ ] **Step 10.6: Decide explicitly: keep all legacy engines, deprecate a subset, or schedule deletion in a separate approved change.**
-- [ ] **Step 10.7: Full suite; plan update; commit.**
+- [x] **Step 10.4: Run local benchmark against the four owner-provided PDF inputs without committing them.** Two uploads may be byte-identical; still run both and record that fact rather than silently collapsing the cases.
+- [x] **Step 10.5: Record measured legacy vs V2 results. Do not infer missing metrics.**
+- [x] **Step 10.6: Decide explicitly: keep all legacy engines, deprecate a subset, or schedule deletion in a separate approved change.**
+- [x] **Step 10.7: Full suite; plan update; commit.**
 
 ---
 
@@ -418,6 +418,7 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 
 | 2026-09-10 | Task 9 RED | `d460902bf0586bf68c625ff492012113fe9a5def` / Actions `34483893202` | Task 9 contracts: `3 failed, 42 passed` | Expected RED: primary UI still selected subject engines, no V2 stage diagnostics, and native start payload omitted Auto defaults. |
 | 2026-09-10 | Task 9 GREEN | `39523487a7c36218861d2ac03cd2fbd20ca5cfec` / Actions `34484348250` | `py_compile` PASS; `node --check` PASS; focused Task 9 `4 passed`; full suite `45 passed` | Auto-first desktop workflow, Advanced content-protection profile, V2 stage timeline and report diagnostics implemented while preserving native job bridge. |
+| 2026-09-12 | Task 10 GREEN + benchmark | `b6dd6dd43c34509e5589a97e708329bb68b4cfad` / Actions `34669911933` | Payload SHA-256 verified; `python -m pytest -q`: `59 passed in 11.39s`; `compileall` PASS; four owner-input benchmark runs recorded locally | Added TDM-guided TaiLieuOnThi raster cleanup, residual QC gate `<= 0.08`, native-pixel preservation outside trusted watermark zones, output-size guard, and benchmark report. All four V2 inputs passed QC; keep all legacy engines as compatibility fallbacks. |
 
 ## Acceptance-Criteria Traceability
 
