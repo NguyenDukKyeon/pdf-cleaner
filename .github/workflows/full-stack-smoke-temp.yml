@@ -64,7 +64,6 @@ jobs:
             page.on('pageerror', err => consoleErrors.push(String(err)));
 
             await page.addInitScript(() => {
-              let pollCount = 0;
               window.pywebview = {
                 api: {
                   get_config: async () => ({
@@ -89,26 +88,24 @@ jobs:
                   start_process: async payload => {
                     if (!payload.paths || payload.paths.length !== 1) throw new Error('missing paths');
                     if (payload.mode !== 'auto') throw new Error('mode is not auto');
+                    if (payload.content_profile !== 'auto') throw new Error('content profile is not auto');
                     return { job_id: 'qa-job' };
                   },
-                  poll_job: async () => {
-                    pollCount += 1;
-                    return {
-                      events: [
-                        { type: 'stage', stage: 'ANALYZING', percent: 15, document_kind: 'vector', watermark_family: 'TAILIEUONTHI.NET', strategy: 'stream_remove', confidence: 0.99 },
-                        { type: 'stage', stage: 'PLANNING', percent: 30, strategy: 'stream_remove', confidence: 0.99 },
-                        { type: 'stage', stage: 'PROCESSING', percent: 55, strategy: 'stream_remove', confidence: 0.99 },
-                        { type: 'progress', percent: 75, file_index: 1, file_total: 1, page_done: 3, page_total: 4, message: 'Đang xử lý' },
-                        { type: 'stage', stage: 'VERIFYING', percent: 90, strategy: 'stream_remove', confidence: 0.99 },
-                        { type: 'qc', message: 'QC đạt', level: 'success', report: { worker_count: 2, native_image_pages: 0, ocr_calls: 0 }, summary: { ok: true } },
-                        { type: 'done', message: 'Hoàn tất', level: 'success', outputs: ['/tmp/qa_clean.pdf'] }
-                      ],
-                      last_event_id: 7,
-                      stage: 'DONE',
-                      terminal: true,
-                      qc_report: { ok: true }
-                    };
-                  },
+                  poll_job: async () => ({
+                    events: [
+                      { type: 'stage', stage: 'ANALYZING', percent: 15, document_kind: 'vector', watermark_family: 'TAILIEUONTHI.NET', strategy: 'stream_remove', confidence: 0.99 },
+                      { type: 'stage', stage: 'PLANNING', percent: 30, strategy: 'stream_remove', confidence: 0.99 },
+                      { type: 'stage', stage: 'PROCESSING', percent: 55, strategy: 'stream_remove', confidence: 0.99 },
+                      { type: 'progress', percent: 75, file_index: 1, file_total: 1, page_done: 3, page_total: 4, message: 'Đang xử lý' },
+                      { type: 'stage', stage: 'VERIFYING', percent: 90, strategy: 'stream_remove', confidence: 0.99 },
+                      { type: 'qc', message: 'QC đạt', level: 'success', report: { worker_count: 2, native_image_pages: 0, ocr_calls: 0 }, summary: { ok: true } },
+                      { type: 'done', message: 'Hoàn tất', level: 'success', outputs: ['/tmp/qa_clean.pdf'] }
+                    ],
+                    last_event_id: 7,
+                    stage: 'DONE',
+                    terminal: true,
+                    qc_report: { ok: true }
+                  }),
                   cancel_job: async () => ({ ok: true }),
                   open_latest_file: async () => ({ ok: true }),
                   open_latest_folder: async () => ({ ok: true }),
@@ -125,7 +122,6 @@ jobs:
 
             await page.locator('#chooseLocalFiles').click();
             await page.waitForFunction(() => document.querySelector('#fileCount')?.textContent.includes('1 file'));
-            await page.locator('#contentProfile').selectOption('math');
             await page.locator('#startBtn').click();
             await page.waitForFunction(() => document.querySelector('#statusText')?.textContent.includes('Hoàn tất'));
 
