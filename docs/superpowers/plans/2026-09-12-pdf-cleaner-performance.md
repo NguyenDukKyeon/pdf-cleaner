@@ -16,10 +16,10 @@
 - Footer residual QC applies to Fast, Balanced, High Quality and Safe presets.
 - OCR remains optional and must not become a per-page requirement.
 - Do not share or mutate one `fitz.Document` concurrently across worker threads/processes.
-- The owner PDFs may be used for local benchmarks but must not be committed without explicit approval.
+- Owner PDFs may be used for local benchmarks but must not be committed without explicit approval.
 - Record before/after timing using the same machine, preset, input and output-quality gates.
-- Safe preset must retain single-worker semantics where currently required.
-- If an optimization is slower or materially increases memory without a compensating benefit, revert it rather than keeping complexity.
+- Safe preset retains single-worker semantics.
+- Remove any optimization that is slower or materially increases memory without a measured compensating benefit.
 
 ---
 
@@ -27,9 +27,10 @@
 
 **Create**
 
-- `backend/engine/pipeline_v2/analysis_cache.py` — small process-local cache and file fingerprinting.
-- `scripts/benchmark_v2.py` — repeatable local benchmark/report tool.
+- `backend/engine/pipeline_v2/analysis_cache.py` — bounded process-local analysis cache and file fingerprinting.
+- `scripts/benchmark_v2.py` — repeatable benchmark/report CLI.
 - `tests/unit/test_analysis_cache.py`.
+- `tests/unit/test_benchmark_v2.py`.
 
 **Modify**
 
@@ -38,11 +39,13 @@
 - `backend/engine/pipeline_v2/execute.py` — pass bounded worker count to raster strategy.
 - `backend/engine/strategies/raster_template.py` — accept runtime worker count.
 - `backend/engine/raster/tdm_guided.py` — run isolated page subprocesses concurrently and assemble in page order.
-- `backend/service.py` — expose benchmark-friendly timing/diagnostics if needed without changing public behavior.
 - `tests/unit/test_document_sampler.py`.
 - `tests/unit/test_tdm_guided.py`.
 - `tests/unit/test_worker_selection.py`.
+- `tests/integration/test_raster_template_strategy.py`.
 - `tests/integration/test_end_to_end_v2.py`.
+- `tests/frontend/test_frontend_contract.py`.
+- `README.md`.
 
 ---
 
@@ -50,17 +53,21 @@
 
 **Files:**
 - Create: `scripts/benchmark_v2.py`
-- Test: lightweight unit/import test if repository convention requires it.
+- Create: `tests/unit/test_benchmark_v2.py`
 
 **Interfaces:**
-- CLI input: one or more PDF paths, `--preset`, `--repeat`, `--output-dir`.
-- JSON output contains per-run and aggregate timing/quality metadata.
+- CLI: `python scripts/benchmark_v2.py <pdf> [<pdf> ...] --preset balanced --repeat 3 --output-dir <dir>`.
+- Function: `summarize_runs(runs: list[dict[str, float | int | str]]) -> dict[str, float]`.
+- JSON report contains one record per run plus aggregate medians.
 
-- [ ] **Step 1: Write the benchmark CLI skeleton test first**
+- [ ] **Step 1: Write the failing benchmark-helper test**
 
-If the repository has no CLI test convention, write a small test that imports `scripts.benchmark_v2` and calls a pure formatter/aggregate helper:
+Create `tests/unit/test_benchmark_v2.py`:
 
 ```python
+from scripts.benchmark_v2 import summarize_runs
+
+
 def test_summarize_runs_reports_median_and_pages_per_second():
     summary = summarize_runs([
         {"total_seconds": 10.0, "pages": 20},
@@ -73,26 +80,49 @@ def test_summarize_runs_reports_median_and_pages_per_second():
 
 - [ ] **Step 2: Run the test and verify RED**
 
-Run the focused test and confirm the module/helper does not exist.
+Run: `python -m pytest -q tests/unit/test_benchmark_v2.py`
+
+Expected: import failure because `scripts/benchmark_v2.py` does not exist.
 
 - [ ] **Step 3: Implement `scripts/benchmark_v2.py`**
 
-The script must:
+The script must run the same V2 analyze → plan → execute → QC path as production and collect:
 
-1. run through the same V2 analyze/plan/execute/QC path as production rather than calling legacy helpers directly;
-2. collect `analyze_seconds`, `processing_seconds`, `qc_seconds` when available, `total_seconds`, page count, pages/sec, output size, strategy, confidence, worker count, native-image pages, OCR calls, footer residual score, watermark residual score and outside-change ratio;
-3. support warmup plus `--repeat N`;
-4. write one JSON report next to benchmark outputs;
-5. never overwrite source PDFs.
+```text
+analyze_seconds
+processing_seconds
+qc_seconds
+total_seconds
+pages
+pages_per_second
+strategy
+confidence
+worker_count
+native_image_pages
+ocr_calls
+output_size_bytes
+footer_residual_score
+watermark_residual_score
+outside_change_ratio
+```
 
-- [ ] **Step 4: Capture baseline evidence**
+Use `time.perf_counter()` around each stage. Never overwrite source PDFs. Write outputs into `--output-dir` and emit one JSON report containing raw runs plus `summarize_runs(...)` results.
 
-Run Balanced on the owner regression PDFs plus existing synthetic E2E fixtures. Save the JSON report outside version control or under an ignored benchmark-output directory.
+- [ ] **Step 4: Run unit test and capture baseline**
+
+Run:
+
+```bash
+python -m pytest -q tests/unit/test_benchmark_v2.py
+python scripts/benchmark_v2.py <owner-pdf-1> <owner-pdf-2> --preset balanced --repeat 3 --output-dir <local-benchmark-dir>
+```
+
+Store the baseline JSON outside version control.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/benchmark_v2.py tests
+git add scripts/benchmark_v2.py tests/unit/test_benchmark_v2.py
 git commit -m "test: add reproducible V2 benchmark harness"
 ```
 
@@ -103,33 +133,32 @@ git commit -m "test: add reproducible V2 benchmark harness"
 **Files:**
 - Modify: `backend/engine/analyzer/document_analyzer.py`
 - Modify: `backend/engine/pipeline_v2/analyze.py`
-- Test: `tests/unit/test_document_sampler.py`
-- Test: `tests/unit/test_stream_analyzer.py`
-- Test: `tests/unit/test_raster_analyzer.py`
+- Modify: `tests/unit/test_document_sampler.py`
+- Modify: `tests/unit/test_stream_analyzer.py`
+- Modify: `tests/unit/test_raster_analyzer.py`
 
 **Interfaces:**
-- Keep public `analyze_document(path, *, max_samples=8, signature_registry=None) -> DocumentProfile` backward compatible.
-- Add internal helper `select_staged_sample_pages(page_count: int, stages: tuple[int, ...] = (3, 5, 8)) -> tuple[tuple[int, ...], ...]`.
-- Add internal helper `_profile_from_evidence(...)` so earlier evidence is reused when expanding a stage.
+- Keep `analyze_document(path, *, max_samples=8, signature_registry=None) -> DocumentProfile` backward compatible.
+- Add `select_staged_sample_pages(page_count: int, stages: tuple[int, ...] = (3, 5, 8)) -> tuple[tuple[int, ...], ...]`.
+- Add internal `_collect_page_evidence(...)` and `_profile_from_evidence(...)` helpers so previously inspected pages are not read twice.
 
 - [ ] **Step 1: Write failing staged-sampling tests**
 
-Required cases:
+Add tests:
 
 ```python
+stages = select_staged_sample_pages(20)
+assert len(stages[0]) == 3
+assert len(stages[1]) == 5
+assert len(stages[2]) == 8
+assert set(stages[0]).issubset(stages[1])
+assert set(stages[1]).issubset(stages[2])
 assert select_staged_sample_pages(2) == ((0, 1),)
-assert len(select_staged_sample_pages(20)[0]) == 3
-assert len(select_staged_sample_pages(20)[1]) == 5
-assert len(select_staged_sample_pages(20)[2]) == 8
-assert set(stage3).issubset(stage5)
-assert set(stage5).issubset(stage8)
 ```
 
-Add an analyzer test proving a strong repeated-stream fixture reads only 3 sampled pages, while an ambiguous fixture expands to 8. Use monkeypatch/spies around the per-page evidence collector rather than timing assertions.
+Add a spy around `_collect_page_evidence` proving a high-confidence repeated-stream fixture inspects 3 pages while an ambiguous fixture expands to 8.
 
-- [ ] **Step 2: Run analyzer tests and verify RED**
-
-Run:
+- [ ] **Step 2: Run focused tests and verify RED**
 
 ```bash
 python -m pytest -q tests/unit/test_document_sampler.py tests/unit/test_stream_analyzer.py tests/unit/test_raster_analyzer.py
@@ -137,32 +166,35 @@ python -m pytest -q tests/unit/test_document_sampler.py tests/unit/test_stream_a
 
 - [ ] **Step 3: Refactor evidence collection without changing classification formulas**
 
-Extract one-page evidence collection into an internal function. Preserve existing `DocumentKind` thresholds, signature matching, repeated-stream evidence and TaiLieuOnThi probe semantics.
+Extract per-page evidence collection while preserving current `DocumentKind` thresholds, signature matching, repeated-stream evidence, and TaiLieuOnThi probe semantics.
 
-- [ ] **Step 4: Add early-stop confidence rules**
+- [ ] **Step 4: Add deterministic early-stop rules**
 
-Use staged samples in deterministic order. Stop early only when both representation and watermark evidence are strong:
+After each stage, build a temporary profile and compute:
 
 ```python
 best = max(profile.watermark_candidates, key=lambda c: c.confidence, default=None)
-strong = profile.confidence >= 0.95 and best is not None and best.confidence >= 0.95
 ```
 
-At stage 3: stop only on `strong`.
+Stage 3 stops only when:
 
-At stage 5: stop when representation confidence is at least `0.90` and best candidate confidence is at least `0.90`.
+```python
+profile.confidence >= 0.95 and best is not None and best.confidence >= 0.95
+```
 
-If there is no candidate, confidence is below the thresholds, or the document remains hybrid/ambiguous, continue to the next stage up to `max_samples`.
+Stage 5 stops only when:
 
-Do not lower the existing router confidence bands.
+```python
+profile.confidence >= 0.90 and best is not None and best.confidence >= 0.90
+```
 
-- [ ] **Step 5: Ensure final `sampled_pages` reports only pages actually inspected**
+No candidate, hybrid ambiguity, or lower confidence always expands to the next stage up to `max_samples`.
 
-The returned `DocumentProfile.sampled_pages` must be the exact pages read, not the theoretical 8-page set.
+- [ ] **Step 5: Return only actually inspected sample pages**
 
-- [ ] **Step 6: Run analyzer and router suites**
+`DocumentProfile.sampled_pages` must exactly match the evidence pages collected before the stop condition.
 
-Run:
+- [ ] **Step 6: Run analyzer + router suites**
 
 ```bash
 python -m pytest -q tests/unit/test_document_sampler.py tests/unit/test_stream_analyzer.py tests/unit/test_raster_analyzer.py tests/unit/test_router.py
@@ -170,9 +202,9 @@ python -m pytest -q tests/unit/test_document_sampler.py tests/unit/test_stream_a
 
 Expected: PASS.
 
-- [ ] **Step 7: Benchmark and keep only if it helps**
+- [ ] **Step 7: Benchmark staged analysis**
 
-Compare analyze time on long high-confidence structural PDFs. Quality/strategy selection must remain unchanged. If the staged implementation does not reduce median analyze time on the target workload, do not merge the complexity.
+Use `scripts/benchmark_v2.py` on long high-confidence PDFs. Keep the change only if median `analyze_seconds` improves and the selected strategy/confidence band remains equivalent.
 
 - [ ] **Step 8: Commit**
 
@@ -203,6 +235,7 @@ class AnalysisFingerprint:
 def fingerprint_pdf(path: str | Path, sample_bytes: int = 65536) -> AnalysisFingerprint: ...
 
 class AnalysisCache:
+    def __init__(self, max_entries: int = 32): ...
     def get(self, path: Path, fingerprint: AnalysisFingerprint) -> DocumentProfile | None: ...
     def put(self, path: Path, fingerprint: AnalysisFingerprint, profile: DocumentProfile) -> None: ...
     def clear(self) -> None: ...
@@ -210,13 +243,13 @@ class AnalysisCache:
 
 - [ ] **Step 1: Write RED cache tests**
 
-Tests must prove:
+Test that:
 
-- same unchanged file returns the cached profile;
-- touching/changing mtime invalidates it;
-- changing first/last sampled bytes invalidates it even when size is unchanged;
-- cache is bounded (for example 32 entries) and evicts oldest/LRU entries;
-- no PDF bytes beyond the small fingerprint sample are retained.
+- unchanged file + identical fingerprint hits;
+- mtime change misses;
+- first/last sampled-byte change misses even when size is unchanged;
+- 33 inserts into a 32-entry cache evict the least-recently-used entry;
+- cached values are `DocumentProfile` objects, never open `fitz.Document` handles or full PDF bytes.
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -224,27 +257,27 @@ Run: `python -m pytest -q tests/unit/test_analysis_cache.py`
 
 - [ ] **Step 3: Implement fingerprinting**
 
-Hash: file size + first 64 KiB + last 64 KiB (or whole file when smaller) using SHA-256. Include `st_mtime_ns` in the fingerprint.
+Hash file size + first 64 KiB + last 64 KiB with SHA-256, and include `st_mtime_ns` in `AnalysisFingerprint`.
 
-- [ ] **Step 4: Implement a bounded in-memory cache**
+- [ ] **Step 4: Implement the 32-entry LRU**
 
-Use `collections.OrderedDict` or another simple LRU. Default max entries: 32. Store typed `DocumentProfile`, not mutable `fitz` objects.
+Use `collections.OrderedDict`. Move hits to the end; pop the oldest entry after inserts that exceed `max_entries`.
 
-- [ ] **Step 5: Integrate in `pipeline_v2/analyze.py`**
+- [ ] **Step 5: Integrate cache into `pipeline_v2/analyze.py`**
 
-The production analyze wrapper computes the fingerprint, checks cache, calls `analyze_document` on miss, then stores the result. Expose a cache-clear function for tests/application reset if needed.
+Create one module-level `AnalysisCache(max_entries=32)`. On each analysis call: fingerprint → lookup → analyze on miss → store → return. Add `clear_analysis_cache()` for tests/app reset.
 
-- [ ] **Step 6: Run cache + analyzer + E2E tests**
-
-Run:
+- [ ] **Step 6: Run cache + E2E tests**
 
 ```bash
 python -m pytest -q tests/unit/test_analysis_cache.py tests/unit/test_document_sampler.py tests/integration/test_end_to_end_v2.py
 ```
 
-- [ ] **Step 7: Benchmark repeated processing**
+Expected: PASS.
 
-Run the same unchanged PDF twice. Second analysis should be materially faster and must report the exact same `DocumentProfile`/strategy evidence.
+- [ ] **Step 7: Benchmark repeated unchanged input**
+
+Process the same PDF twice in one app process. The second `analyze_seconds` must fall materially while strategy/profile data remain identical.
 
 - [ ] **Step 8: Commit**
 
@@ -261,55 +294,55 @@ git commit -m "perf: cache unchanged document analysis"
 - Modify: `backend/engine/raster/tdm_guided.py`
 - Modify: `backend/engine/strategies/raster_template.py`
 - Modify: `backend/engine/pipeline_v2/execute.py`
-- Test: `tests/unit/test_tdm_guided.py`
-- Test: `tests/unit/test_worker_selection.py`
-- Test: `tests/integration/test_raster_template_strategy.py`
+- Modify: `tests/unit/test_tdm_guided.py`
+- Modify: `tests/unit/test_worker_selection.py`
+- Modify: `tests/integration/test_raster_template_strategy.py`
+- Modify: `tests/integration/test_end_to_end_v2.py`
 
 **Interfaces:**
 - `clean_tailieuonthi_document(..., workers: int = 1, footer_cleanup: str = "auto") -> TdmGuidedResult`.
 - `RasterTemplateStrategy.execute(..., workers: int = 1, footer_cleanup: str = "auto", ...)`.
-- `execute_plan` passes its already-computed bounded `worker_count` to RasterTemplateStrategy as well as LegacyStrategy.
+- `execute_plan` passes its already-computed bounded worker count to `RasterTemplateStrategy` and `LegacyStrategy`.
 
 - [ ] **Step 1: Write RED concurrency tests with a fake page worker**
 
-Monkeypatch `_run_page_worker` to sleep briefly and record active worker count. For a four-page input and `workers=2`, assert:
+Monkeypatch `_run_page_worker` to sleep briefly and record current/maximum active calls. For a four-page input and `workers=2` assert:
 
 ```python
 assert max_active_workers == 2
 assert assembled_page_order == [0, 1, 2, 3]
 ```
 
-For `workers=1`, assert serial behavior. Add a cancellation test ensuring pending work is not submitted indefinitely after cancellation.
+For `workers=1`, assert `max_active_workers == 1`. Add a cancellation test that sets `should_cancel()` true and verifies no final PDF is assembled.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
 Run: `python -m pytest -q tests/unit/test_tdm_guided.py tests/unit/test_worker_selection.py`
 
-- [ ] **Step 3: Add bounded concurrency in the parent only**
+- [ ] **Step 3: Add bounded parent-side concurrency**
 
-Use `concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers))` to launch the already-isolated `_run_page_worker` subprocess calls. The thread pool coordinates child processes; it must never share a mutable `fitz.Document`.
+Use:
+
+```python
+with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, int(workers))) as pool:
+    ...
+```
+
+Each thread may launch one existing isolated `_run_page_worker` subprocess. No thread receives a shared mutable `fitz.Document`.
 
 - [ ] **Step 4: Preserve deterministic output order**
 
-Collect `(page_index, page_png, metrics)` results by index. Update progress as pages complete, but call `_assemble_native_pdf` only after all successful results are present and sort page paths by page index.
+Store each completed result under its page index. Progress may update in completion order, but `_assemble_native_pdf(...)` receives `page_pngs` sorted by page index only after every page succeeds.
 
-- [ ] **Step 5: Handle failure/cancellation atomically**
+- [ ] **Step 5: Preserve atomic failure/cancellation**
 
-On the first failed page:
+On one page failure or cancellation: cancel pending futures, terminate/allow existing `_run_page_worker` cancellation to terminate running children, skip PDF assembly, and rely on the temporary directory for cleanup.
 
-- stop scheduling new work where practical;
-- cancel pending futures;
-- allow running child processes to terminate through the existing cancellation path;
-- do not assemble/promote partial output;
-- let temporary-directory cleanup remove page PNG/JSON artifacts.
+- [ ] **Step 6: Pass computed worker count through V2 execution**
 
-- [ ] **Step 6: Pass worker count through RasterTemplateStrategy**
+`execute_plan` must pass `workers` to `RasterTemplateStrategy`; Safe preset remains `workers == 1` through the existing `auto_worker_count` selection path.
 
-Modify `execute_plan` so both LegacyStrategy and RasterTemplateStrategy receive the computed `workers`. Safe mode must still result in one worker.
-
-- [ ] **Step 7: Run focused and E2E tests**
-
-Run:
+- [ ] **Step 7: Run focused + integration tests**
 
 ```bash
 python -m pytest -q tests/unit/test_tdm_guided.py tests/unit/test_worker_selection.py tests/integration/test_raster_template_strategy.py tests/integration/test_end_to_end_v2.py
@@ -317,9 +350,9 @@ python -m pytest -q tests/unit/test_tdm_guided.py tests/unit/test_worker_selecti
 
 Expected: PASS.
 
-- [ ] **Step 8: Benchmark TaiLieuOnThi PDFs**
+- [ ] **Step 8: Benchmark concurrency**
 
-Compare Balanced median processing time for `workers=1` vs auto worker count. Record peak practical worker count and output/QC metrics. Keep a hard cap only if benchmark/memory evidence shows it is necessary.
+Compare Balanced median processing time on the owner TaiLieuOnThi PDFs for `workers=1` versus auto workers. Keep the concurrent version only when total time improves and all footer/watermark/outside-change metrics remain within gate.
 
 - [ ] **Step 9: Commit**
 
@@ -330,98 +363,60 @@ git commit -m "perf: parallelize isolated TaiLieuOnThi page repair"
 
 ---
 
-### Task 5: Avoid redundant encoding/replacement work in raster strategies
+### Task 5: Lock preset quality invariants and document performance behavior
 
 **Files:**
-- Modify: `backend/engine/strategies/raster_template.py`
-- Test: `tests/integration/test_raster_template_strategy.py`
-- Test: `tests/unit/test_raster_repair.py`
+- Modify: `tests/frontend/test_frontend_contract.py`
+- Modify: `tests/unit/test_worker_selection.py`
+- Modify: `README.md`
 
-**Interfaces:** no new public API.
+**Interfaces:** existing preset names and payload values remain unchanged.
 
-- [ ] **Step 1: Add tests proving unchanged pages/xrefs are not encoded/replaced**
+- [ ] **Step 1: Add preset invariant tests**
 
-Monkeypatch image encoding or `replace_image` and verify:
+Require the frontend/config contract to preserve:
 
-- `pixels == 0` never invokes PNG encoding/replacement;
-- reused XRefs are processed once;
-- pages with the same XRef still report progress correctly.
-
-- [ ] **Step 2: Run RED or confirm current coverage gap**
-
-Run: `python -m pytest -q tests/integration/test_raster_template_strategy.py tests/unit/test_raster_repair.py`
-
-If current behavior already passes the exact assertions, keep the tests and make no production change for that subcase.
-
-- [ ] **Step 3: Make only measured minimal changes**
-
-Do not introduce speculative page classifiers. Preserve the current `processed_xrefs` optimization and the `if pixels:` encode/replace guard. If profiling shows redundant decode/resize work before the zero-change decision, remove only that measured duplication.
-
-- [ ] **Step 4: Benchmark generic raster path**
-
-Record processing time and output size before/after. Revert production edits if the benchmark improvement is within noise.
-
-- [ ] **Step 5: Commit tests/optimization**
-
-```bash
-git add backend/engine/strategies/raster_template.py tests/integration/test_raster_template_strategy.py tests/unit/test_raster_repair.py
-git commit -m "perf: avoid redundant raster replacement work"
+```text
+Fast       -> dpi 200, output_dpi 200, quality 88
+Balanced   -> dpi 240, output_dpi 240, quality 92
+HighQuality-> dpi 320, output_dpi 320, quality 95
+Safe       -> dpi 240, output_dpi 240, quality 95, worker request 1
 ```
 
----
+Also assert the default selected preset remains `balanced`, and the new Footer cleanup default remains `auto` for all presets rather than being disabled by Fast.
 
-### Task 6: Verify preset behavior and expose performance diagnostics without weakening quality
+- [ ] **Step 2: Run preset/worker tests**
 
-**Files:**
-- Modify only if required: `backend/service.py`
-- Modify only if required: `frontend/static/app.js`
-- Modify: `README.md`
-- Test: `tests/frontend/test_frontend_contract.py`
-- Test: relevant preset/config tests.
+```bash
+python -m pytest -q tests/frontend/test_frontend_contract.py tests/unit/test_worker_selection.py
+```
 
-**Interfaces:** existing Fast/Balanced/High Quality/Safe names remain unchanged.
+Expected: PASS after any required test-contract updates from the UI/footer plan.
 
-- [ ] **Step 1: Add/extend tests for preset invariants**
-
-Verify:
-
-- Fast uses its configured lower DPI/quality values but still runs V2 QC/footer QC;
-- Balanced remains default;
-- High Quality uses its higher configured DPI values;
-- Safe forces one worker;
-- no preset sets `footer_cleanup=off` or disables footer QC.
-
-- [ ] **Step 2: Run preset/config tests**
-
-Run the focused tests and confirm current behavior or RED failures.
-
-- [ ] **Step 3: Add timing diagnostics only where already available**
-
-If the production report already contains `processing_seconds`/`total_seconds`, surface them in technical diagnostics/logs. Do not add expensive timing instrumentation around every page unless benchmark analysis requires it.
-
-- [ ] **Step 4: Update README performance guidance**
+- [ ] **Step 3: Update README**
 
 Document:
 
-- Fast for speed-sensitive work;
-- Balanced as recommended default;
-- High Quality for output fidelity;
-- Safe for conservative single-worker execution;
+- Fast = speed-sensitive work with existing lower DPI/quality values;
+- Balanced = recommended default;
+- High Quality = higher fidelity, slower;
+- Safe = conservative single-worker mode;
+- Footer visual QC remains active for every preset;
 - analysis cache applies only to unchanged files within the current app process;
-- Auto Smart still chooses the safe strategy.
+- Auto Smart still owns safe strategy selection unless the user requests a compatibility-gated engine preference.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add backend/service.py frontend/static/app.js README.md tests
-git commit -m "docs: clarify safe performance presets"
+git add tests/frontend/test_frontend_contract.py tests/unit/test_worker_selection.py README.md
+git commit -m "docs: lock safe performance preset semantics"
 ```
 
 ---
 
-### Task 7: Final before/after benchmark and release gate
+### Task 6: Final before/after benchmark and release gate
 
-**Files:** no mandatory production changes; benchmark report is not committed unless it contains no owner/private paths and the owner wants it retained.
+**Files:** no production file is changed by this task unless a benchmark exposes a regression that must be fixed in the owning task.
 
 - [ ] **Step 1: Run full automated verification**
 
@@ -433,9 +428,9 @@ python -m pytest -q
 
 Expected: PASS.
 
-- [ ] **Step 2: Run before/after benchmark matrix**
+- [ ] **Step 2: Run the final benchmark matrix**
 
-For each owner regression PDF and representative synthetic fixture, run at least Balanced three times after one warmup. Compare against the Task 1 baseline.
+For each owner regression PDF and representative synthetic fixture, run Balanced three measured times after one warmup and compare with Task 1 baseline.
 
 Record:
 
@@ -449,34 +444,22 @@ strategy
 worker_count
 native_image_pages
 ocr_calls
-output_size
+output_size_bytes
 footer_residual_score
 watermark_residual_score
 outside_change_ratio
 ```
 
-- [ ] **Step 3: Evaluate each optimization independently**
+- [ ] **Step 3: Accept/reject each optimization with explicit gates**
 
-Accept a change only when:
-
-- median time improves beyond normal run-to-run noise;
-- selected strategy is still correct;
-- all structural/content/footer QC gates pass;
-- output size does not grow unreasonably without a documented quality benefit;
-- memory/CPU behavior remains acceptable on the target desktop.
-
-Remove any optimization that fails these criteria.
+Accept only when median time improves beyond normal run-to-run noise, selected strategy remains correct, all structural/content/footer QC gates pass, output size remains reasonable, and memory/CPU behavior is acceptable. Revert the responsible task commit if it fails these gates.
 
 - [ ] **Step 4: Run Windows/native and Chromium full-stack smoke**
 
-Confirm no UI/native regression and successful processing through DONE with diagnostics populated.
+Confirm pywebview window construction/NativeApi binding, frontend primary flow, Auto Smart default, Footer cleanup Auto default, processing to DONE, and populated engine/footer diagnostics.
 
-- [ ] **Step 5: Final owner-PDF visual check**
+- [ ] **Step 5: Perform final owner-PDF visual check**
 
-Inspect first, second, dense middle and final pages. Performance work must not reintroduce footer ghosts, diagonal watermark residue, broken formulas/graphs, or damaged page numbers.
+Inspect first, second, dense middle and final pages. No performance change may reintroduce footer ghosts, diagonal watermark residue, damaged formulas/graphs, or altered page numbers.
 
-- [ ] **Step 6: Final commit only if needed**
-
-If benchmark-driven cleanup changed code/docs, commit with a narrow message. Otherwise leave the prior task commits as the final implementation history.
-
-**Merge gate:** full test suite green + full-stack smoke green + quality metrics pass + visual owner regression accepted + measured speed improvement documented.
+**Merge gate:** full suite green + full-stack smoke green + quality metrics pass + visual owner regression accepted + measured speed improvement documented.
