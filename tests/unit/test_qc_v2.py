@@ -73,3 +73,27 @@ def test_qc_uses_native_full_page_images_without_page_render(tmp_path, monkeypat
     qc = validate_output(src, out, report, max_outside_change_ratio=0.001, dpi=96)
     assert qc.ok
     assert qc.outside_change_ratio == 0.0
+
+
+def test_qc_rejects_visible_watermark_residual_even_when_outside_change_is_zero(tmp_path):
+    src=tmp_path/'src.pdf'; out=tmp_path/'out.pdf'; _pdf(src); _pdf(out)
+    report = ProcessingReport(
+        'raster_template', .98, str(out),
+        metadata={'native_outside_change_ratio': 0.0, 'watermark_residual_score': 0.12},
+    )
+    qc=validate_output(src,out,report,max_outside_change_ratio=0.08,max_watermark_residual_score=0.08,dpi=72)
+    assert not qc.ok
+    assert qc.watermark_residual_score == 0.12
+    assert any('watermark residual' in reason for reason in qc.reasons)
+
+
+def test_qc_accepts_low_native_residual_without_relaxing_outside_change_gate(tmp_path):
+    src=tmp_path/'src.pdf'; out=tmp_path/'out.pdf'; _pdf(src); _pdf(out)
+    report = ProcessingReport(
+        'raster_template', .98, str(out),
+        metadata={'native_outside_change_ratio': 0.0, 'watermark_residual_score': 0.01},
+    )
+    qc=validate_output(src,out,report,max_outside_change_ratio=0.001,max_watermark_residual_score=0.08,dpi=72)
+    assert qc.ok
+    assert qc.outside_change_ratio == 0.0
+    assert qc.watermark_residual_score == 0.01

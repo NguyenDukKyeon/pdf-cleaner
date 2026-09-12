@@ -52,6 +52,6 @@ def execute_plan(input_path: str | Path, output_path: str | Path, plan: Processi
         if not staging.exists(): raise RuntimeError('strategy completed without creating staging output')
         os.replace(str(staging), str(output_path))
         processing_seconds = time.perf_counter() - started
-        return ProcessingReport(strategy=active_name, confidence=plan.confidence, output_path=str(output_path), worker_count=workers, used_fallback=used_fallback, fallback_reason=fallback_reason, changed_pages=int(getattr(result,'changed_pages',0)), removed_items=int(getattr(result,'removed_items',0)), rasterized_pages=int(getattr(result,'rasterized_pages',0)), native_image_pages=int(getattr(result,'native_image_pages',0)), ocr_calls=int(getattr(result,'ocr_calls',0)), processing_seconds=processing_seconds, total_seconds=processing_seconds)
+        return ProcessingReport(strategy=active_name, confidence=plan.confidence, output_path=str(output_path), worker_count=workers, used_fallback=used_fallback, fallback_reason=fallback_reason, changed_pages=int(getattr(result,'changed_pages',0)), removed_items=int(getattr(result,'removed_items',0)), rasterized_pages=int(getattr(result,'rasterized_pages',0)), native_image_pages=int(getattr(result,'native_image_pages',0)), ocr_calls=int(getattr(result,'ocr_calls',0)), processing_seconds=processing_seconds, total_seconds=processing_seconds, metadata=dict(getattr(result,'metadata',{}) or {}))
     finally:
         _safe_unlink(staging)

@@ -77,6 +77,7 @@ def validate_output(
     report,
     *,
     max_outside_change_ratio: float = 0.08,
+    max_watermark_residual_score: float = 0.08,
     pixel_change_threshold: int = 24,
     dpi: int = 96,
 ) -> QCReport:
@@ -116,6 +117,36 @@ def validate_output(
         if not geometry_ok:
             reasons.append("page geometry changed")
             return QCReport(False, True, False, 1.0, tuple(failed_pages), tuple(reasons), 1.0)
+
+        native_outside = metadata.get("native_outside_change_ratio")
+        residual = metadata.get("watermark_residual_score")
+        if native_outside is not None and residual is not None:
+            outside_ratio = float(native_outside)
+            residual_score = float(residual)
+            changed_ratio = float(metadata.get("native_changed_pixel_ratio", 0.0) or 0.0)
+            if outside_ratio > max_outside_change_ratio:
+                reasons.append(
+                    f"outside-mask visual change {outside_ratio:.4f} exceeds {max_outside_change_ratio:.4f}"
+                )
+            if residual_score > max_watermark_residual_score:
+                reasons.append(
+                    f"watermark residual {residual_score:.4f} exceeds {max_watermark_residual_score:.4f}"
+                )
+            return QCReport(
+                ok=(
+                    page_count_ok
+                    and geometry_ok
+                    and outside_ratio <= max_outside_change_ratio
+                    and residual_score <= max_watermark_residual_score
+                ),
+                page_count_ok=page_count_ok,
+                geometry_ok=geometry_ok,
+                outside_change_ratio=outside_ratio,
+                failed_pages=tuple(sorted(set(failed_pages))),
+                reasons=tuple(reasons),
+                changed_pixel_ratio=changed_ratio,
+                watermark_residual_score=residual_score,
+            )
 
         outside_changed = 0
         outside_total = 0

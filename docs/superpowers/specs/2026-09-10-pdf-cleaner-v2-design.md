@@ -138,6 +138,10 @@ For raster PDFs:
 
 OCR is an optional classifier/detector, not the primary engine and not a per-page requirement.
 
+For a **known high-confidence watermark signature**, V2 may reuse a proven legacy cleanup primitive as a signature-specific pixel repair implementation without reverting to subject-based routing. For the `tailieuonthi` signature, the approved implementation may use the proven TDM V7 header/footer/diagonal/table/graph cleanup on a bounded working image, then transfer only pixels inside trusted watermark zones back to the native page image. The original subject selector must not decide this path. Unknown raster watermarks continue to use generic document-level consensus/template repair.
+
+Because the TDM V7 implementation retains substantial native state across pages, signature-specific repair must run in short-lived isolated page workers. The parent process owns document routing, cancellation, output assembly, and QC. For conservative full-page raster PDFs, output assembly may rebuild same-geometry pages from cleaned native images; this is not counted as page rasterization because the source was already a full-page raster XObject. Documents with unsafe extra structure must fall back rather than silently discarding it.
+
 ### 7. Repair policy
 
 Prefer minimal pixel changes. Where a translucent watermark can be modelled, favor deblending/alpha recovery. Use inpainting only as fallback for damaged regions that cannot be reconstructed safely.

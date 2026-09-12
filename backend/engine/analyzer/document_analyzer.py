@@ -9,6 +9,7 @@ from .models import DocumentKind, DocumentProfile, PageEvidence, WatermarkCandid
 from .raster_analyzer import full_page_image_coverage, page_image_hashes
 from .stream_analyzer import page_stream_hashes, repeated_hashes
 from ..signatures.registry import SignatureRegistry
+from ..raster.tdm_guided import probe_tailieuonthi_signature
 
 
 def select_sample_pages(page_count: int, max_samples: int = 8) -> tuple[int, ...]:
@@ -101,6 +102,23 @@ def analyze_document(
                     evidence=("text_alias",) + (("repeated_stream",) if repeated_on_pages else ()),
                 )
             )
+
+        if kind is DocumentKind.RASTER and full_page_image_ratio >= 0.8:
+            if not any(item.marker == "tailieuonthi" for item in candidates):
+                try:
+                    probe_confidence, probe_pages = probe_tailieuonthi_signature(doc, sampled_pages)
+                except Exception:
+                    probe_confidence, probe_pages = 0.0, ()
+                if probe_confidence >= 0.70 and probe_pages:
+                    candidates.append(
+                        WatermarkCandidate(
+                            kind="raster_signature",
+                            confidence=probe_confidence,
+                            marker="tailieuonthi",
+                            page_indices=tuple(probe_pages),
+                            evidence=("tdm_signature_probe", "header_footer", "diagonal"),
+                        )
+                    )
 
         return DocumentProfile(
             page_count=doc.page_count,

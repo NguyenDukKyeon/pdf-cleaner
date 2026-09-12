@@ -1,5 +1,6 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class StrategyResult:
@@ -9,3 +10,4 @@ class StrategyResult:
     saved_to: str = ""
     native_image_pages: int = 0
     ocr_calls: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)

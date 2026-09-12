@@ -371,7 +371,10 @@ output file size
 - [ ] **Step 10.1: Re-read plan/spec.**
 - [ ] **Step 10.2: RED — end-to-end synthetic tests assert correct route + valid output for vector, raster and hybrid documents.**
 - [ ] **Step 10.3: Verify RED, then implement any minimum hardening required.**
-- [ ] **Step 10.4: Run local benchmark against the three owner-provided PDFs without committing them.**
+  - For high-confidence `tailieuonthi` raster documents, benchmark and, if superior, reuse the proven TDM V7 cleanup as a signature-specific repair primitive. This remains Auto/signature routing, not subject routing.
+  - Run TDM-guided page repair in short-lived isolated workers; transfer only trusted header/footer/diagonal cleanup back to native pixels. Preserve page geometry and reject unsafe extra page structure.
+  - Add a visual-residual quality metric/gate so a visually obvious watermark cannot pass only because outside-mask change is low.
+- [ ] **Step 10.4: Run local benchmark against the four owner-provided PDF inputs without committing them.** Two uploads may be byte-identical; still run both and record that fact rather than silently collapsing the cases.
 - [ ] **Step 10.5: Record measured legacy vs V2 results. Do not infer missing metrics.**
 - [ ] **Step 10.6: Decide explicitly: keep all legacy engines, deprecate a subset, or schedule deletion in a separate approved change.**
 - [ ] **Step 10.7: Full suite; plan update; commit.**

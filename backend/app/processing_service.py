@@ -143,6 +143,7 @@ def process_document_v2(
             staging,
             report,
             max_outside_change_ratio=float(options.get("max_outside_change_ratio", 0.08)),
+            max_watermark_residual_score=float(options.get("max_watermark_residual_score", 0.08)),
             dpi=int(options.get("qc_dpi", 96) or 96),
         )
         qc_seconds = time.perf_counter() - t

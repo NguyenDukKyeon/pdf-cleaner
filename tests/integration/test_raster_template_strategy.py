@@ -58,6 +58,45 @@ def test_raster_template_strategy_learns_once_and_uses_native_images(tmp_path, m
     assert aft[20:23, 30:150].mean() < 60
 
 
+def test_tailieuonthi_marker_uses_signature_specific_tdm_guided_cleanup(tmp_path, monkeypatch):
+    import shutil
+    import backend.engine.strategies.raster_template as raster_module
+    from backend.engine.raster.tdm_guided import TdmGuidedResult
+
+    src = tmp_path / 'src.pdf'; out = tmp_path / 'out.pdf'; _make_pdf(src)
+    calls = []
+
+    def fake_guided(input_pdf, output_pdf, **kwargs):
+        calls.append((Path(input_pdf), Path(output_pdf), kwargs))
+        shutil.copyfile(input_pdf, output_pdf)
+        return TdmGuidedResult(
+            changed_pages=5,
+            changed_pixels=123,
+            native_image_pages=5,
+            watermark_residual_score=0.01,
+            outside_change_ratio=0.0,
+            work_dpi=200,
+        )
+
+    monkeypatch.setattr(raster_module, 'clean_tailieuonthi_document', fake_guided)
+    plan = ProcessingPlan(
+        StrategyKind.RASTER_TEMPLATE,
+        .95,
+        (ProcessingOperation('learn_and_apply_raster_template', 'tailieuonthi'),),
+        True,
+    )
+
+    result = RasterTemplateStrategy().execute(src, out, plan)
+
+    assert len(calls) == 1
+    assert result.native_image_pages == 5
+    assert result.rasterized_pages == 0
+    assert result.ocr_calls == 0
+    assert result.metadata['repair_engine'] == 'tdm_guided'
+    assert result.metadata['watermark_residual_score'] == 0.01
+    assert result.metadata['native_outside_change_ratio'] == 0.0
+
+
 def test_raster_template_strategy_does_not_explode_output_size(tmp_path):
     src = tmp_path / 'large-compressible.pdf'; out = tmp_path / 'large-compressible-clean.pdf'
     _make_large_compressible_pdf(src)

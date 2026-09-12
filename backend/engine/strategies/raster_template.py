@@ -12,6 +12,7 @@ from backend.engine.raster.consensus import RasterWatermarkModel, learn_watermar
 from backend.engine.raster.image_extractor import extract_native_page_image
 from backend.engine.raster.repair import repair_with_model
 from backend.engine.raster.sampler import load_native_samples
+from backend.engine.raster.tdm_guided import clean_tailieuonthi_document
 from backend.engine.router.models import ProcessingPlan, StrategyKind
 
 from .base import StrategyResult
@@ -31,6 +32,30 @@ class RasterTemplateStrategy:
         if plan.strategy is not StrategyKind.RASTER_TEMPLATE:
             raise ValueError("RasterTemplateStrategy requires a RASTER_TEMPLATE plan")
         marker_id = next((op.marker for op in plan.operations if op.marker), None)
+        if marker_id == "tailieuonthi":
+            guided = clean_tailieuonthi_document(
+                input_pdf,
+                output_pdf,
+                log=log,
+                progress=progress,
+                should_cancel=should_cancel,
+            )
+            return StrategyResult(
+                removed_items=guided.changed_pixels,
+                changed_pages=guided.changed_pages,
+                rasterized_pages=0,
+                saved_to=str(output_pdf),
+                native_image_pages=guided.native_image_pages,
+                ocr_calls=0,
+                metadata={
+                    "repair_engine": "tdm_guided",
+                    "tdm_work_dpi": guided.work_dpi,
+                    "watermark_residual_score": guided.watermark_residual_score,
+                    "native_outside_change_ratio": guided.outside_change_ratio,
+                    "native_changed_pixel_ratio": guided.changed_pixel_ratio,
+                    "page_residual_scores": list(guided.page_residual_scores),
+                },
+            )
         doc = fitz.open(str(input_pdf))
         try:
             # Consensus does not need native 300-DPI arrays. Keep representative
