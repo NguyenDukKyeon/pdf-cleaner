@@ -42,7 +42,7 @@
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |
 | 8 | V2 QC + atomic processing service integration | COMPLETE |
 | 9 | pywebview API + Auto-first frontend UX/progress/report | COMPLETE |
-| 10 | Regression benchmark, hardening and legacy-removal decision | READY FOR FINAL CI |
+| 10 | Regression benchmark, hardening and legacy-removal decision | COMPLETE |
 | 11 | Final verification, docs and PR readiness | NOT STARTED |
 
 ---
@@ -419,6 +419,7 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Task 9 RED | `d460902bf0586bf68c625ff492012113fe9a5def` / Actions `34483893202` | Task 9 contracts: `3 failed, 42 passed` | Expected RED: primary UI still selected subject engines, no V2 stage diagnostics, and native start payload omitted Auto defaults. |
 | 2026-09-10 | Task 9 GREEN | `39523487a7c36218861d2ac03cd2fbd20ca5cfec` / Actions `34484348250` | `py_compile` PASS; `node --check` PASS; focused Task 9 `4 passed`; full suite `45 passed` | Auto-first desktop workflow, Advanced content-protection profile, V2 stage timeline and report diagnostics implemented while preserving native job bridge. |
 | 2026-09-12 | Task 10 GREEN + benchmark | `b6dd6dd43c34509e5589a97e708329bb68b4cfad` / Actions `34669911933` | Payload SHA-256 verified; `python -m pytest -q`: `59 passed in 11.39s`; `compileall` PASS; four owner-input benchmark runs recorded locally | Added TDM-guided TaiLieuOnThi raster cleanup, residual QC gate `<= 0.08`, native-pixel preservation outside trusted watermark zones, output-size guard, and benchmark report. All four V2 inputs passed QC; keep all legacy engines as compatibility fallbacks. |
+| 2026-09-12 | Task 10 final CI gate | `4fd6beb39de12e609e71698640486092f218ca0b` / Actions `34670226489` | Normal branch `Tests` workflow SUCCESS after verified implementation and plan checkpoint | Task 10 completion gate satisfied without relaxing residual, outside-change, output-size, regression-test, or benchmark requirements. |
 
 ## Acceptance-Criteria Traceability
 
