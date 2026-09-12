@@ -63,13 +63,13 @@
 - Consumes: approved source snapshot from owner upload
 - Produces: importable repository, deterministic pytest entrypoint, CI test command `python -m pytest -q`
 
-- [ ] **Step 0.1: Restore all source files to the feature branch without modifying behavior.**
+- [x] **Step 0.1: Restore all source files to the feature branch without modifying behavior.**
 
   Verification: compare restored file paths and SHA-256 hashes against the extracted owner ZIP snapshot.
 
-- [ ] **Step 0.2: Read plan/spec again before test harness changes.**
+- [x] **Step 0.2: Read plan/spec again before test harness changes.**
 
-- [ ] **Step 0.3: Add a baseline verification test for restored entrypoints and repository layout.**
+- [x] **Step 0.3: Add a baseline verification test for restored entrypoints and repository layout.**
 
   This is a non-behavioral baseline/scaffolding task. Do not fabricate a RED failure after source restoration; source SHA-256 parity is the restore gate and the baseline test must pass.
 
@@ -86,19 +86,19 @@ def test_expected_desktop_entrypoints_exist():
     assert (root / "frontend" / "static" / "app.js").is_file()
 ```
 
-- [ ] **Step 0.4: Add the minimum pytest/CI scaffolding without changing production behavior.**
+- [x] **Step 0.4: Add the minimum pytest/CI scaffolding without changing production behavior.**
 
   CI workflow runs on pushes/PRs and installs the project dependencies plus pytest, then executes `python -m pytest -q`.
 
-- [ ] **Step 0.5: Run the focused baseline verification and confirm PASS.**
+- [x] **Step 0.5: Run the focused baseline verification and confirm PASS.**
 
   Run: `python -m pytest tests/test_baseline_imports.py -q`
 
-- [ ] **Step 0.6: Run full baseline suite.**
+- [x] **Step 0.6: Run full baseline suite.**
 
   Run: `python -m pytest -q`
 
-- [ ] **Step 0.7: Update this plan with hashes/test evidence and commit Task 0.**
+- [x] **Step 0.7: Update this plan with hashes/test evidence and commit Task 0.**
 
 ---
 
@@ -253,13 +253,13 @@ confidence < 0.70 -> LEGACY
 - `learn_watermark_model(samples, candidates, signature_registry) -> RasterWatermarkModel`
 - `RasterTemplateStrategy.execute(...) -> StrategyResult`
 
-- [ ] **Step 6.1: Re-read plan/spec.**
-- [ ] **Step 6.2: RED — synthetic pages have changing content plus fixed translucent diagonal watermark; model learns repeated region from sampled pages, not one-page color heuristics.**
-- [ ] **Step 6.3: RED — dark formula/line content overlapping watermark remains guarded.**
-- [ ] **Step 6.4: Verify RED.**
-- [ ] **Step 6.5: GREEN — implement normalized sample consensus/template scoring and minimal repair; no mandatory OCR dependency.**
-- [ ] **Step 6.6: Add optional OCR adapter only if tests show structural/template evidence is insufficient; keep import lazy.**
-- [ ] **Step 6.7: Full suite; plan update; commit.**
+- [x] **Step 6.1: Re-read plan/spec.**
+- [x] **Step 6.2: RED — synthetic pages have changing content plus fixed translucent diagonal watermark; model learns repeated region from sampled pages, not one-page color heuristics.**
+- [x] **Step 6.3: RED — dark formula/line content overlapping watermark remains guarded.**
+- [x] **Step 6.4: Verify RED.**
+- [x] **Step 6.5: GREEN — implement normalized sample consensus/template scoring and minimal repair; no mandatory OCR dependency.**
+- [x] **Step 6.6: Add optional OCR adapter only if tests show structural/template evidence is insufficient; keep import lazy.** Decision: not required; consensus/native-image tests and owner regression evidence were sufficient, so no mandatory OCR dependency was added.
+- [x] **Step 6.7: Full suite; plan update; commit.**
 
 ---
 
@@ -388,13 +388,13 @@ output file size
 - Modify: design/plan only if implementation facts changed
 - Modify: this plan
 
-- [ ] **Step 11.1: Re-read final spec/plan and audit acceptance criteria line by line.**
-- [ ] **Step 11.2: Run `python -m pytest -q`.**
-- [ ] **Step 11.3: Run syntax/import checks for production modules.**
-- [ ] **Step 11.4: Verify GitHub CI on branch/PR head.**
-- [ ] **Step 11.5: Compare branch against `main`; ensure no owner PDFs, temp files, `_bootstrap` artifacts introduced by the refactor, or unrelated edits are included.**
-- [ ] **Step 11.6: Update README with Auto workflow, Advanced content profiles, strategy/report behavior and troubleshooting.**
-- [ ] **Step 11.7: Mark plan COMPLETE only with current verification evidence and prepare PR for review.**
+- [x] **Step 11.1: Re-read final spec/plan and audit acceptance criteria line by line.**
+- [x] **Step 11.2: Run `python -m pytest -q`.**
+- [x] **Step 11.3: Run syntax/import checks for production modules.**
+- [x] **Step 11.4: Verify GitHub CI on branch/PR head.**
+- [x] **Step 11.5: Compare branch against `main`; ensure no owner PDFs, temp files, `_bootstrap` artifacts introduced by the refactor, or unrelated edits are included.**
+- [x] **Step 11.6: Update README with Auto workflow, Advanced content profiles, strategy/report behavior and troubleshooting.**
+- [x] **Step 11.7: Mark plan COMPLETE only with current verification evidence and prepare PR for review.**
 
 ---
 
@@ -420,6 +420,10 @@ Append one row after every implementation checkpoint. Do not rewrite historical 
 | 2026-09-10 | Task 9 GREEN | `39523487a7c36218861d2ac03cd2fbd20ca5cfec` / Actions `34484348250` | `py_compile` PASS; `node --check` PASS; focused Task 9 `4 passed`; full suite `45 passed` | Auto-first desktop workflow, Advanced content-protection profile, V2 stage timeline and report diagnostics implemented while preserving native job bridge. |
 | 2026-09-12 | Task 10 GREEN + benchmark | `b6dd6dd43c34509e5589a97e708329bb68b4cfad` / Actions `34669911933` | Payload SHA-256 verified; `python -m pytest -q`: `59 passed in 11.39s`; `compileall` PASS; four owner-input benchmark runs recorded locally | Added TDM-guided TaiLieuOnThi raster cleanup, residual QC gate `<= 0.08`, native-pixel preservation outside trusted watermark zones, output-size guard, and benchmark report. All four V2 inputs passed QC; keep all legacy engines as compatibility fallbacks. |
 | 2026-09-12 | Task 10 final CI gate | `4fd6beb39de12e609e71698640486092f218ca0b` / Actions `34670226489` | Normal branch `Tests` workflow SUCCESS after verified implementation and plan checkpoint | Task 10 completion gate satisfied without relaxing residual, outside-change, output-size, regression-test, or benchmark requirements. |
+
+| 2026-09-10 | Task 0 audited closure | `eb2510b3e02a4443bc37d3f9209fd82beb7492e3`; baseline test `027f08e629ebc1a9f1028851f1d8699176898dc9` | Restore transport SHA-256 `82a7b105afeeab387f3d805a09ef769de195a4c876396f42a1265d1e28d8997e` verified; restored `backend/service.py`, `config_manager.py`, and `watermaker TYHH.py` hashes verified; final CI includes baseline layout test | Earlier truncated bootstrap attempt was superseded by hash-verified owner-source restoration. Test/CI scaffolding now matches the plan. |
+| 2026-09-10 | Task 6 RED → GREEN audit | RED `419a107081a239a768fb16ebf6e230e0dbb7bc2d`; GREEN `83006b46aaebf6f984d73c84dba1972c7ae38da3`; bounded-sample follow-up `de70f29002f4e43db334f6547cf0b0035806a630` | RED tests preceded raster consensus implementation; current suite covers cross-page consensus, dark-content guard, native extraction, strategy integration and output-size guard | Task 6 was implemented but its checklist status drifted. Optional OCR was deliberately unnecessary; OCR remains lazy/optional by design. |
+| 2026-09-12 | Task 11 final verification | HEAD `73f70a83d963b6a31243eeaeed0f6b06fc58f731` / Actions `34671309846` | Python `compileall` PASS; `node --check frontend/static/app.js` PASS; `python -m pytest -q`: `60 passed in 15.05s`; branch-vs-main diff audited | README documents Auto V2/Advanced/QC/troubleshooting; temporary recovery/export workflows and `_bootstrap_supp` removed; no owner PDFs appear in final diff. Branch is PR-ready; legacy fallbacks intentionally retained per Task 10 evidence. |
 
 ## Acceptance-Criteria Traceability
 
