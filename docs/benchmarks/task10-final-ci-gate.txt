@@ -1,1 +1,0 @@
-Task 10 final CI gate. This temporary file exists only to trigger the normal branch Tests workflow after the verified implementation and plan checkpoint.
