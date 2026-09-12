@@ -32,18 +32,18 @@
 
 | Task | Deliverable | Status |
 |---|---|---|
-| 0 | Restore source baseline on feature branch + establish tests/CI harness | IN PROGRESS |
+| 0 | Restore source baseline on feature branch + establish tests/CI harness | COMPLETE |
 | 1 | Typed analyzer models + representative-page sampling | COMPLETE |
 | 2 | Structural/raster document analysis + signature registry | COMPLETE |
 | 3 | Deterministic watermark router + processing plans | COMPLETE |
 | 4 | Structural stream/object fast path | COMPLETE |
 | 5 | Native raster image extraction + synthetic raster fixtures | COMPLETE |
-| 6 | Document-level raster consensus/template model | NOT STARTED |
+| 6 | Document-level raster consensus/template model | COMPLETE |
 | 7 | V2 executor + safe legacy fallback + multi-worker selection | COMPLETE |
 | 8 | V2 QC + atomic processing service integration | COMPLETE |
 | 9 | pywebview API + Auto-first frontend UX/progress/report | COMPLETE |
 | 10 | Regression benchmark, hardening and legacy-removal decision | COMPLETE |
-| 11 | Final verification, docs and PR readiness | NOT STARTED |
+| 11 | Final verification, docs and PR readiness | COMPLETE |
 
 ---
 
