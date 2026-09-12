@@ -35,8 +35,8 @@
 
 - `backend/engine/router/models.py` — typed engine preference.
 - `backend/engine/router/router.py` — compatibility-gated preference application.
-- `backend/engine/pipeline_v2/report.py` — footer and preference diagnostics.
-- `backend/engine/pipeline_v2/execute.py` — pass compatible runtime options to strategies and reports.
+- `backend/engine/pipeline_v2/report.py` — footer/preference diagnostics in report metadata.
+- `backend/engine/pipeline_v2/execute.py` — pass compatible runtime options to strategies.
 - `backend/engine/raster/tdm_guided.py` — invoke native footer polish after core TDM cleanup.
 - `backend/engine/strategies/raster_template.py` — carry footer cleanup option/metrics.
 - `backend/engine/qc_v2/validator.py` — footer-specific QC gates.
@@ -45,12 +45,13 @@
 - `frontend/index.html` — engine cards, renamed protection profiles, footer-cleanup UI and diagnostics.
 - `frontend/static/app.js` — state/payload/rendering for new controls.
 - `frontend/static/styles.css` — engine/profile card styling.
-- `tests/unit/test_router.py`
-- `tests/unit/test_tdm_guided.py`
-- `tests/unit/test_qc_v2.py`
-- `tests/unit/test_native_api_contract.py`
-- `tests/frontend/test_frontend_contract.py`
-- `tests/integration/test_end_to_end_v2.py`
+- `tests/unit/test_router.py`.
+- `tests/unit/test_tdm_guided.py`.
+- `tests/unit/test_qc_v2.py`.
+- `tests/unit/test_native_api_contract.py`.
+- `tests/frontend/test_frontend_contract.py`.
+- `tests/integration/test_raster_template_strategy.py`.
+- `tests/integration/test_end_to_end_v2.py`.
 
 ---
 
@@ -59,18 +60,19 @@
 **Files:**
 - Modify: `backend/engine/router/models.py`
 - Modify: `backend/engine/router/router.py`
-- Test: `tests/unit/test_router.py`
+- Modify: `tests/unit/test_router.py`
 
 **Interfaces:**
-- Produces: `EnginePreference(str, Enum)` with `AUTO_SMART`, `STREAM_CLEAN`, `RASTER_CLEAN`, `COMPATIBILITY_CLEAN`.
-- Produces: `build_processing_plan(profile, *, content_profile="auto", engine_preference="auto_smart") -> ProcessingPlan`.
-- Produces: `ProcessingPlan.requested_engine: str = "auto_smart"`.
+- `EnginePreference(str, Enum)` with `AUTO_SMART`, `STREAM_CLEAN`, `RASTER_CLEAN`, `COMPATIBILITY_CLEAN`.
+- `build_processing_plan(profile, *, content_profile="auto", engine_preference="auto_smart") -> ProcessingPlan`.
+- `ProcessingPlan.requested_engine: str = "auto_smart"`.
 
-- [ ] **Step 1: Write failing router tests for each preference**
+- [ ] **Step 1: Write failing router tests for every visible engine preference**
 
 Add tests equivalent to:
 
 ```python
+import pytest
 from backend.engine.router.models import EnginePreference, StrategyKind
 
 
@@ -103,7 +105,7 @@ Expected: failures because `EnginePreference`, `requested_engine`, and `engine_p
 
 - [ ] **Step 3: Implement the enum and compatibility gate**
 
-Add to `router/models.py`:
+Add to `backend/engine/router/models.py`:
 
 ```python
 class EnginePreference(str, Enum):
@@ -113,14 +115,25 @@ class EnginePreference(str, Enum):
     COMPATIBILITY_CLEAN = "compatibility_clean"
 ```
 
-Add `requested_engine: str = EnginePreference.AUTO_SMART.value` to `ProcessingPlan`.
-
-In `router.py`, normalize the preference first. Build the normal Auto plan using existing confidence logic, then apply:
+Add this defaulted field to `ProcessingPlan`:
 
 ```python
+requested_engine: str = EnginePreference.AUTO_SMART.value
+```
+
+Refactor `build_processing_plan` so the existing logic first builds one `auto_plan`, then apply:
+
+```python
+preference = EnginePreference(engine_preference)
+
 if preference is EnginePreference.COMPATIBILITY_CLEAN:
-    return replace(auto_plan, strategy=StrategyKind.LEGACY, operations=(), requested_engine=preference.value,
-                   reason="Compatibility Clean requested explicitly")
+    return replace(
+        auto_plan,
+        strategy=StrategyKind.LEGACY,
+        operations=(),
+        requested_engine=preference.value,
+        reason="Compatibility Clean requested explicitly",
+    )
 if preference is EnginePreference.STREAM_CLEAN and auto_plan.strategy is not StrategyKind.STREAM_REMOVE:
     raise ValueError("Stream Clean is incompatible with this PDF; use Auto Smart or Compatibility Clean")
 if preference is EnginePreference.RASTER_CLEAN and auto_plan.strategy is not StrategyKind.RASTER_TEMPLATE:
@@ -128,11 +141,15 @@ if preference is EnginePreference.RASTER_CLEAN and auto_plan.strategy is not Str
 return replace(auto_plan, requested_engine=preference.value)
 ```
 
-Use `dataclasses.replace`; do not duplicate router confidence logic.
+Use `dataclasses.replace`; do not duplicate confidence/strategy-selection logic.
 
-- [ ] **Step 4: Run router tests and full router-adjacent unit tests**
+- [ ] **Step 4: Run router-adjacent tests**
 
-Run: `python -m pytest -q tests/unit/test_router.py tests/unit/test_analyzer_models.py tests/unit/test_raster_analyzer.py tests/unit/test_stream_analyzer.py`
+Run:
+
+```bash
+python -m pytest -q tests/unit/test_router.py tests/unit/test_analyzer_models.py tests/unit/test_raster_analyzer.py tests/unit/test_stream_analyzer.py
+```
 
 Expected: PASS.
 
@@ -152,18 +169,18 @@ git commit -m "feat: add compatibility-gated engine preferences"
 - Modify: `backend/service.py`
 - Modify: `backend/engine/pipeline_v2/report.py`
 - Modify: `backend/engine/pipeline_v2/execute.py`
-- Test: `tests/unit/test_native_api_contract.py`
-- Test: existing service/integration tests that exercise `start_process_local`
+- Modify: `tests/unit/test_native_api_contract.py`
+- Modify: `tests/integration/test_end_to_end_v2.py`
 
 **Interfaces:**
 - Payload fields: `engine_preference: str`, `footer_cleanup: str`.
 - Allowed engine values: `auto_smart`, `stream_clean`, `raster_clean`, `compatibility_clean`.
 - Allowed footer values: `auto`, `standard`, `deep`.
-- `ProcessingReport.metadata` carries `requested_engine`, `footer_cleanup_level`, `footer_residual_score`, `footer_protected_change_ratio` when available.
+- `ProcessingReport.metadata` carries `requested_engine`, `footer_cleanup_level`, `footer_residual_score`, `footer_protected_change_ratio` when the selected strategy produces them.
 
-- [ ] **Step 1: Write failing NativeApi default/forwarding tests**
+- [ ] **Step 1: Write failing NativeApi forwarding/default tests**
 
-Extend `tests/unit/test_native_api_contract.py` with a fake service and assert:
+Extend `tests/unit/test_native_api_contract.py` with a fake service that stores the received payload:
 
 ```python
 payload = {"paths": ["x.pdf"]}
@@ -172,34 +189,42 @@ assert fake_service.last_payload["engine_preference"] == "auto_smart"
 assert fake_service.last_payload["footer_cleanup"] == "auto"
 ```
 
-Also assert explicit values are preserved.
+Add a second case asserting explicit `raster_clean`/`deep` values are preserved.
 
 - [ ] **Step 2: Run NativeApi tests and verify RED**
 
 Run: `python -m pytest -q tests/unit/test_native_api_contract.py`
 
-- [ ] **Step 3: Add payload defaults and validation**
+- [ ] **Step 3: Add payload defaults and service validation**
 
-In `NativeApi.start_process`:
+In `NativeApi.start_process` add:
 
 ```python
 normalized.setdefault("engine_preference", "auto_smart")
 normalized.setdefault("footer_cleanup", "auto")
 ```
 
-In `backend/service.py`, validate against constant sets before starting a job. Invalid values raise `ValueError` with the field name and supplied value. Pass `engine_preference` into `build_processing_plan(...)` and pass `footer_cleanup` into execution runtime options.
+In `backend/service.py` define fixed allow-sets and reject invalid values before creating the job. Pass `engine_preference` into `build_processing_plan(...)`; pass `footer_cleanup` into `execute_plan(...)` as a keyword runtime option.
 
-- [ ] **Step 4: Extend `ProcessingReport` diagnostics without breaking callers**
+- [ ] **Step 4: Keep `ProcessingReport` backward compatible through `metadata`**
 
-Keep existing report fields. Add optional metadata values rather than mandatory constructor parameters unless the current report dataclass already has a suitable optional field. The serialized report must remain backward compatible.
+Do not add mandatory dataclass constructor fields. `ProcessingReport` already has `metadata: dict[str, Any]`; store requested-engine/footer values there. Preserve existing `as_dict()` behavior.
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **Step 5: Add an E2E payload/default assertion**
 
-Run: `python -m pytest -q tests/unit/test_native_api_contract.py tests/integration/test_end_to_end_v2.py`
+Extend `tests/integration/test_end_to_end_v2.py` so default execution records `requested_engine == "auto_smart"`; an explicit compatibility request produces Legacy strategy and records `requested_engine == "compatibility_clean"`.
+
+- [ ] **Step 6: Run focused tests**
+
+Run:
+
+```bash
+python -m pytest -q tests/unit/test_native_api_contract.py tests/integration/test_end_to_end_v2.py
+```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add native_api.py backend/service.py backend/engine/pipeline_v2/report.py backend/engine/pipeline_v2/execute.py tests/unit/test_native_api_contract.py tests/integration/test_end_to_end_v2.py
@@ -214,7 +239,7 @@ git commit -m "feat: thread engine and footer preferences through V2"
 - Modify: `frontend/index.html`
 - Modify: `frontend/static/app.js`
 - Modify: `frontend/static/styles.css`
-- Test: `tests/frontend/test_frontend_contract.py`
+- Modify: `tests/frontend/test_frontend_contract.py`
 
 **Interfaces:**
 - DOM: `#enginePicker`, `[data-engine]`, `#contentProfilePicker`, `[data-content-profile]`, `#footerCleanup`.
@@ -223,7 +248,7 @@ git commit -m "feat: thread engine and footer preferences through V2"
 
 - [ ] **Step 1: Rewrite the frontend contract tests first**
 
-Require these labels/copy in HTML:
+Require these strings in HTML:
 
 ```text
 Auto Smart
@@ -241,25 +266,25 @@ Text & Image Safe
 Footer cleanup
 ```
 
-Require JS to contain the three new state variables and payload fields. Require that `Vector Repair` is absent from selectable engine markup.
+Require JS to contain all three state variables and all three payload fields. Assert `Vector Repair` is absent from elements carrying `data-engine`.
 
 - [ ] **Step 2: Run frontend contract tests and verify RED**
 
 Run: `python -m pytest -q tests/frontend/test_frontend_contract.py`
 
-- [ ] **Step 3: Implement engine cards in Step 3 of the main workflow**
+- [ ] **Step 3: Implement engine cards in workflow Step 3**
 
-Use button/radio-card markup, not a native `<select>`. Auto Smart is selected initially. Each card contains `<b>` title plus `<small>` one-line purpose. Add accessible `role="radiogroup"` and selected state via `aria-pressed` or equivalent.
+Use button/radio-card markup with `role="radiogroup"`; Auto Smart starts selected. Each card contains a title and one-line purpose. Maintain keyboard focus and selected state with `aria-pressed`.
 
 - [ ] **Step 4: Replace the Advanced content-profile `<select>` with descriptive profile cards**
 
-Keep the wire values on `data-content-profile` exactly unchanged. Only labels/copy change.
+Use `data-content-profile="auto|math|physics|chemistry|ebook"`. User-facing labels/copy come from the spec; wire values remain unchanged.
 
-- [ ] **Step 5: Add Footer cleanup control**
+- [ ] **Step 5: Add Footer cleanup Auto/Standard/Deep control**
 
-Use a compact three-option segmented/card control for `auto`, `standard`, `deep`, with Auto selected by default and the copy from the spec.
+Use a compact three-option control with `data-footer-cleanup="auto|standard|deep"`. Auto starts selected.
 
-- [ ] **Step 6: Update JavaScript selection and payload logic**
+- [ ] **Step 6: Update JavaScript state and payload logic**
 
 Add:
 
@@ -268,11 +293,11 @@ let selectedEnginePreference = 'auto_smart';
 let selectedFooterCleanup = 'auto';
 ```
 
-Implement `selectEnginePreference`, `selectContentProfile`, `selectFooterCleanup` using fixed allow-lists. `commonPayload()` must emit all three values.
+Use fixed allow-lists in `selectEnginePreference`, `selectContentProfile`, and `selectFooterCleanup`. `commonPayload()` emits all three values.
 
-- [ ] **Step 7: Update diagnostics labels**
+- [ ] **Step 7: Update diagnostics strategy labels**
 
-Map actual strategies to user-facing names:
+Use:
 
 ```javascript
 const strategyLabels = {
@@ -283,11 +308,9 @@ const strategyLabels = {
 };
 ```
 
-Display Vector Repair only as a diagnostic result, never as a selectable engine card.
+Vector Repair may appear only as an actual strategy diagnostic, never as a selectable card.
 
-- [ ] **Step 8: Run frontend syntax and contract tests**
-
-Run:
+- [ ] **Step 8: Run syntax + contract tests**
 
 ```bash
 node --check frontend/static/app.js
@@ -314,60 +337,92 @@ git commit -m "feat: clarify engine and protection controls"
 **Interfaces:**
 
 ```python
+from dataclasses import dataclass
+from typing import Literal
+import numpy as np
+
 FooterCleanupLevel = Literal["auto", "standard", "deep"]
-FooterPolishConfig(...)
-FooterPolishMetrics(...)
-score_footer_residual(rgb, *, config, content_protect_mask=None) -> float
-polish_footer_residual(native_rgb, *, config, content_protect_mask=None) -> tuple[np.ndarray, FooterPolishMetrics]
+
+@dataclass(frozen=True, slots=True)
+class FooterPolishConfig:
+    level: FooterCleanupLevel = "auto"
+    footer_url_box: tuple[float, float, float, float] = (0.32, 0.955, 0.75, 0.997)
+    page_number_guard: tuple[float, float, float, float] = (0.80, 0.955, 1.00, 1.00)
+    upper_content_guard_y: float = 0.945
+    standard_work_dpi: int = 220
+    deep_work_dpi: int = 260
+    residual_threshold: float = 0.035
+
+@dataclass(frozen=True, slots=True)
+class FooterPolishMetrics:
+    level_used: str
+    changed_pixels: int
+    residual_score_before: float
+    residual_score_after: float
+    protected_change_ratio: float
+
+
+def score_footer_residual(
+    rgb: np.ndarray,
+    *,
+    config: FooterPolishConfig,
+    content_protect_mask: np.ndarray | None = None,
+) -> float: ...
+
+
+def polish_footer_residual(
+    native_rgb: np.ndarray,
+    *,
+    config: FooterPolishConfig,
+    content_protect_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, FooterPolishMetrics]: ...
 ```
 
 - [ ] **Step 1: Create deterministic synthetic footer fixtures in the unit test**
 
-Generate an RGB white/off-white page with:
+Generate an off-white RGB page containing:
 
-- colored teacher/slogan text represented by saturated rectangles/strokes above `y=0.945`;
-- centered pale gray glyph-like components in the footer URL ROI;
-- a thin horizontal footer rule;
-- dark page-number glyph-like components inside the right guard.
+- saturated colored teacher/slogan strokes above normalized `y=0.945`;
+- centered pale-gray glyph-like components inside `footer_url_box`;
+- a thin legitimate horizontal footer rule;
+- dark page-number glyph-like components inside `page_number_guard`.
 
-Do this in Python/NumPy/OpenCV inside the test; do not add binary fixtures.
+Generate all data in Python/NumPy/OpenCV; add no binary fixture.
 
-- [ ] **Step 2: Write RED tests for scoring and protection**
+- [ ] **Step 2: Write RED scoring/protection tests**
 
-Tests must prove:
+Create a local helper in the test to convert normalized boxes to NumPy slices, capture protected regions before cleanup, and assert:
 
 ```python
 assert score_footer_residual(dirty, config=cfg) > cfg.residual_threshold
+page_number_before = dirty[page_number_slice].copy()
+upper_before = dirty[:upper_guard_y_px].copy()
 cleaned, metrics = polish_footer_residual(dirty, config=cfg)
 assert metrics.residual_score_after < metrics.residual_score_before
 assert metrics.residual_score_after <= cfg.residual_threshold
-assert np.array_equal(cleaned[page_number_guard], dirty[page_number_guard])
-assert np.array_equal(cleaned[upper_content_guard], dirty[upper_content_guard])
+assert np.array_equal(cleaned[page_number_slice], page_number_before)
+assert np.array_equal(cleaned[:upper_guard_y_px], upper_before)
 ```
 
-Also test that an already clean footer changes zero or near-zero pixels.
+For an already-clean synthetic footer assert `metrics.changed_pixels == 0` and `np.array_equal(cleaned, clean_input)`.
 
 - [ ] **Step 3: Run test and verify RED**
 
 Run: `python -m pytest -q tests/unit/test_footer_polish.py`
 
-Expected: import/module failure.
+Expected: import failure because the module does not exist.
 
-- [ ] **Step 4: Implement ROI/guard helpers**
+- [ ] **Step 4: Implement native-resolution ROI/guard helpers**
 
-Implement normalized-box-to-pixel conversion, page-number guard, upper-content guard, and optional external content-protect mask. All masks are native-resolution booleans.
+Convert normalized boxes to boolean masks. `effective_protect = page_number_guard | upper_content_guard | content_protect_mask`. All cleanup candidates are masked with `~effective_protect` before reconstruction.
 
 - [ ] **Step 5: Implement residual scoring**
 
-Within the footer URL ROI, estimate local background with a robust blur/median from unprotected pixels. Score only low-saturation residual candidate pixels. Normalize residual contrast by ROI size so the score is comparable across native resolutions.
+Inside `footer_url_box`, estimate local background from unprotected pixels using a robust median/blur. Candidate residue must be low saturation and have positive local contrast against the paper estimate. Normalize summed candidate contrast by `255 * candidate_roi_pixel_count` to produce a stable `0..1` score.
 
-Use one function for both before/after scoring to avoid metric drift.
+- [ ] **Step 6: Implement Standard, Deep, and Auto**
 
-- [ ] **Step 6: Implement Standard and Deep cleanup**
-
-Standard uses conservative candidate thresholds and minimal component dilation. Deep may slightly expand candidate components and use stronger background reconstruction, but both share exactly the same content/page-number guards.
-
-For `level="auto"`, execute Standard, score, and run Deep only if the Standard score remains above threshold.
+Standard uses conservative residual thresholds and one-pixel component dilation. Deep uses the same guards with stronger local-background reconstruction and at most two-pixel component dilation. Auto executes Standard, scores the result, then executes Deep only when Standard remains above `residual_threshold`.
 
 - [ ] **Step 7: Run footer-polish tests**
 
@@ -389,54 +444,74 @@ git commit -m "feat: add native footer residual polish"
 **Files:**
 - Modify: `backend/engine/raster/tdm_guided.py`
 - Modify: `backend/engine/strategies/raster_template.py`
-- Test: `tests/unit/test_tdm_guided.py`
-- Test: `tests/integration/test_raster_template_strategy.py`
+- Modify: `tests/unit/test_tdm_guided.py`
+- Modify: `tests/integration/test_raster_template_strategy.py`
 
 **Interfaces:**
-- `clean_tailieuonthi_document(..., footer_cleanup: str = "auto") -> TdmGuidedResult`.
-- Extend `TdmGuidedResult` with optional/defaulted footer metrics so existing constructors/tests remain compatible.
 
-- [ ] **Step 1: Add failing TDM-guided tests**
-
-Add a unit test around the page cleanup path using monkeypatch/fake images to prove `footer_cleanup="auto"` invokes Footer Polish after core cleanup and returns:
+Extend `TdmGuidedResult` with defaulted fields:
 
 ```python
-result.footer_cleanup_level in {"standard", "deep"}
-result.footer_residual_score >= 0.0
-result.footer_protected_change_ratio >= 0.0
+footer_cleanup_level: str | None = None
+footer_residual_score: float | None = None
+footer_protected_change_ratio: float | None = None
+page_footer_residual_scores: tuple[float, ...] = ()
 ```
 
-Also test an explicit `deep` value is forwarded.
+Change:
+
+```python
+clean_tailieuonthi_document(
+    input_pdf,
+    output_pdf,
+    *,
+    work_dpi=DEFAULT_WORK_DPI,
+    footer_cleanup="auto",
+    log=None,
+    progress=None,
+    should_cancel=None,
+) -> TdmGuidedResult
+```
+
+- [ ] **Step 1: Add failing TDM-guided footer tests**
+
+Monkeypatch Footer Polish in the page cleanup seam and prove `footer_cleanup="auto"` is forwarded after core cleanup. Assert document aggregation returns the max final residual/protected-change ratio and reports `deep` when any page escalates.
 
 - [ ] **Step 2: Run RED tests**
 
-Run: `python -m pytest -q tests/unit/test_tdm_guided.py tests/integration/test_raster_template_strategy.py`
+```bash
+python -m pytest -q tests/unit/test_tdm_guided.py tests/integration/test_raster_template_strategy.py
+```
 
-- [ ] **Step 3: Integrate without changing the core TDM algorithm**
+- [ ] **Step 3: Call Footer Polish after native core transfer**
 
-After `transfer_working_cleanup_to_native(...)` returns the native-size core-cleaned image, call `polish_footer_residual` on that native image. Do not move footer polish into `watermaker TDM.py`.
+After `transfer_working_cleanup_to_native(...)` produces the native-size core-cleaned page, call `polish_footer_residual(...)`. Do not modify `watermaker TDM.py` for this feature.
 
-- [ ] **Step 4: Keep the protected mask conservative**
+- [ ] **Step 4: Build/forward a conservative protect mask**
 
-Provide Footer Polish with a native-resolution content-protect mask when available. Always enforce page-number and upper-content guards even if debug masks are missing.
+Resize any available TDM debug content-protect mask to native resolution with nearest-neighbor interpolation and pass it to Footer Polish. Footer Polish must still enforce its page-number and upper-content guards when that debug mask is unavailable.
 
-- [ ] **Step 5: Aggregate document footer metrics**
+- [ ] **Step 5: Aggregate page metrics deterministically**
 
-For document result:
+For the document:
 
-- `footer_residual_score = max(page footer residual scores)`;
-- `footer_protected_change_ratio = max(page protected change ratios)`;
-- `footer_cleanup_level = "deep"` if any page escalated to Deep, else `"standard"` when enabled.
+```python
+footer_residual_score = max(page_scores, default=0.0)
+footer_protected_change_ratio = max(page_protected_ratios, default=0.0)
+footer_cleanup_level = "deep" if any(level == "deep" for level in page_levels) else "standard"
+```
 
-Store per-page scores in metadata for diagnostics/debugging.
+Store per-page final scores in `page_footer_residual_scores` and strategy metadata.
 
-- [ ] **Step 6: Forward footer cleanup from `RasterTemplateStrategy`**
+- [ ] **Step 6: Forward footer cleanup through `RasterTemplateStrategy`**
 
-When marker is `tailieuonthi`, pass the runtime footer setting to `clean_tailieuonthi_document`. Add the new metrics to `StrategyResult.metadata`.
+Add `footer_cleanup: str = "auto"` to `RasterTemplateStrategy.execute(...)`. For marker `tailieuonthi`, pass it to `clean_tailieuonthi_document`. Copy the result metrics into `StrategyResult.metadata`.
 
 - [ ] **Step 7: Run focused tests**
 
-Run: `python -m pytest -q tests/unit/test_footer_polish.py tests/unit/test_tdm_guided.py tests/integration/test_raster_template_strategy.py`
+```bash
+python -m pytest -q tests/unit/test_footer_polish.py tests/unit/test_tdm_guided.py tests/integration/test_raster_template_strategy.py
+```
 
 Expected: PASS.
 
@@ -453,11 +528,11 @@ git commit -m "feat: polish TaiLieuOnThi footer residuals"
 
 **Files:**
 - Modify: `backend/engine/qc_v2/validator.py`
-- Modify: `backend/engine/pipeline_v2/report.py`
-- Test: `tests/unit/test_qc_v2.py`
+- Modify: `tests/unit/test_qc_v2.py`
 
 **Interfaces:**
-- Extend `QCReport` with defaulted optional fields:
+
+Extend `QCReport` with defaulted optional fields:
 
 ```python
 footer_residual_score: float | None = None
@@ -465,45 +540,51 @@ footer_cleanup_level: str | None = None
 footer_protected_change_ratio: float | None = None
 ```
 
-- [ ] **Step 1: Write RED QC tests**
-
-Add one report metadata case that passes existing watermark residual checks but fails because `footer_residual_score` is above threshold. Add another that fails because `footer_protected_change_ratio` is above threshold. Add a passing case with all metrics below thresholds.
-
-- [ ] **Step 2: Run RED tests**
-
-Run: `python -m pytest -q tests/unit/test_qc_v2.py`
-
-- [ ] **Step 3: Extend `validate_output` parameters**
-
-Add keyword defaults:
+Extend `validate_output(...)` with:
 
 ```python
 max_footer_residual_score: float = 0.035
 max_footer_protected_change_ratio: float = 0.002
 ```
 
-When metadata contains footer metrics, apply both gates in addition to existing native-outside and watermark-residual gates.
+- [ ] **Step 1: Write RED QC tests**
 
-- [ ] **Step 4: Preserve backward compatibility**
+Create metadata cases where all existing native/watermark checks pass but:
 
-If footer metrics are absent, current non-TDM paths behave exactly as before. Do not fail Stream Remove or generic raster output merely because footer metadata is absent.
+1. `footer_residual_score=0.050` fails;
+2. `footer_protected_change_ratio=0.010` fails;
+3. `footer_residual_score=0.020` and `footer_protected_change_ratio=0.0` pass.
 
-- [ ] **Step 5: Run QC and integration tests**
+- [ ] **Step 2: Run RED tests**
 
-Run: `python -m pytest -q tests/unit/test_qc_v2.py tests/integration/test_end_to_end_v2.py`
+Run: `python -m pytest -q tests/unit/test_qc_v2.py`
+
+- [ ] **Step 3: Apply footer gates only when footer metadata exists**
+
+When `footer_residual_score` is present, append a reason and fail if it exceeds `max_footer_residual_score`. When `footer_protected_change_ratio` is present, append a reason and fail if it exceeds `max_footer_protected_change_ratio`.
+
+- [ ] **Step 4: Preserve non-TDM behavior**
+
+When footer metrics are absent, Stream Remove, generic raster, and Legacy paths retain current QC semantics exactly.
+
+- [ ] **Step 5: Run QC + E2E tests**
+
+```bash
+python -m pytest -q tests/unit/test_qc_v2.py tests/integration/test_end_to_end_v2.py
+```
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/engine/qc_v2/validator.py backend/engine/pipeline_v2/report.py tests/unit/test_qc_v2.py tests/integration/test_end_to_end_v2.py
+git add backend/engine/qc_v2/validator.py tests/unit/test_qc_v2.py
 git commit -m "feat: gate TaiLieuOnThi footer visual quality"
 ```
 
 ---
 
-### Task 7: Add end-to-end diagnostics and synthetic footer regression
+### Task 7: Add end-to-end footer diagnostics and regression coverage
 
 **Files:**
 - Modify: `tests/integration/test_end_to_end_v2.py`
@@ -512,15 +593,16 @@ git commit -m "feat: gate TaiLieuOnThi footer visual quality"
 - Modify: `frontend/index.html`
 
 **Interfaces:**
-- Event/report diagnostics: `requested_engine`, `footer_cleanup_level`, `footer_residual_score`, `footer_protected_change_ratio`.
+- Report/event diagnostics: `requested_engine`, `footer_cleanup_level`, `footer_residual_score`, `footer_protected_change_ratio`.
+- DOM diagnostics: `#analysisFooterCleanup`, `#analysisFooterResidual`.
 
-- [ ] **Step 1: Add an E2E synthetic raster PDF fixture**
+- [ ] **Step 1: Add an in-test synthetic raster footer fixture**
 
-Generate pages in-test with a full-page image containing a gray footer URL-like watermark, protected colored footer text, page number and footer rule. Feed it through the V2 raster/TDM-guided test seam with the known TaiLieuOnThi marker rather than committing owner PDFs.
+Generate a full-page image PDF inside the test with a centered gray footer URL-like watermark, colored protected footer text, page number, and footer rule. Route it through the known TaiLieuOnThi strategy seam without adding owner PDFs to git.
 
-- [ ] **Step 2: Assert end-to-end properties**
+- [ ] **Step 2: Assert E2E output properties**
 
-Assert:
+Require:
 
 ```python
 assert output_doc.page_count == input_doc.page_count
@@ -530,15 +612,13 @@ assert report.metadata["footer_cleanup_level"] in {"standard", "deep"}
 assert report.ocr_calls == 0
 ```
 
-Compare synthetic page-number/colored-content guard pixels before/after within test tolerance.
+Compare synthetic page-number and colored-content guard pixels before/after within an exact or explicitly documented one-level image tolerance.
 
 - [ ] **Step 3: Render footer diagnostics in UI**
 
-Add diagnostics fields such as `#analysisFooterCleanup` and `#analysisFooterResidual`. Use compact values (`Deep`, `1.8%` or decimal score consistently) and `—` for non-raster paths.
+Add the two diagnostics fields to HTML. In JS, render `footer_cleanup_level` as `Standard`/`Deep` and `footer_residual_score` as a percentage with one decimal place. Render `—` when metrics do not apply.
 
-- [ ] **Step 4: Run frontend and E2E tests**
-
-Run:
+- [ ] **Step 4: Run frontend + E2E tests**
 
 ```bash
 node --check frontend/static/app.js
@@ -560,13 +640,9 @@ git commit -m "test: cover footer polish end to end"
 
 **Files:**
 - Modify: `README.md`
-- No owner PDF binaries committed.
-
-**Interfaces:** none; this is the release gate.
+- Do not add owner PDF binaries.
 
 - [ ] **Step 1: Run the full automated suite**
-
-Run:
 
 ```bash
 python -m compileall -q backend desktop_app.py native_api.py
@@ -574,39 +650,39 @@ node --check frontend/static/app.js
 python -m pytest -q
 ```
 
-Expected: all commands PASS.
+Expected: PASS.
 
-- [ ] **Step 2: Process both owner regression inputs locally**
+- [ ] **Step 2: Process owner regression PDFs**
 
-Use the cleaned/original TaiLieuOnThi pair supplied by the owner. Run Auto Smart + Balanced + Footer cleanup Auto. Record actual strategy, footer cleanup level, footer residual score, watermark residual score, outside-change ratio, total time and output size.
+Run Auto Smart + Balanced + Footer cleanup Auto against the supplied TaiLieuOnThi inputs, including the Live 1 file and the Live 2 original/backup source. Record actual strategy, cleanup level, footer residual, watermark residual, outside-change ratio, total time and output size.
 
-- [ ] **Step 3: Visually inspect representative footer pages**
+- [ ] **Step 3: Inspect representative pages at 100% and 200% zoom**
 
-Inspect at minimum first, second, a dense middle page, and final page at 100% and 200% zoom. Acceptance:
+Inspect first, second, one dense middle page and the final page. Acceptance is all-or-nothing:
 
-- no readable/obvious footer URL ghost;
-- no rectangular white patch or tone seam;
-- page number unchanged;
-- colored slogan/teacher line unchanged;
+- no readable or obvious footer URL ghost;
+- no rectangular white patch, halo edge, or tone seam;
+- page number visually unchanged;
+- colored teacher/slogan line visually unchanged;
 - diagonal watermark cleanup does not regress.
 
-If any criterion fails, do not merge; add the failing crop as a local debug artifact and return to Task 4/5 thresholds/guards.
+Any failure blocks merge and returns implementation to Task 4/5.
 
-- [ ] **Step 4: Run the existing Windows/native + Chromium full-stack smoke**
+- [ ] **Step 4: Run Windows/native and Chromium full-stack smoke**
 
-Verify pywebview window construction/NativeApi binding and Chromium primary flow. The engine picker defaults to Auto Smart, footer cleanup defaults to Auto, processing reaches DONE, diagnostics show the actual engine and footer metrics.
+Verify pywebview window construction/NativeApi binding, frontend primary flow, Auto Smart default, Footer cleanup Auto default, processing through DONE, actual-engine diagnostics, and footer metrics.
 
 - [ ] **Step 5: Update README**
 
-Document Engine preference vs Content protection profile, Footer cleanup Auto/Standard/Deep, and explain that Auto remains recommended.
+Document Engine preference vs Content protection profile, Footer cleanup Auto/Standard/Deep, compatibility-gate behavior, and Auto Smart as the recommended default.
 
-- [ ] **Step 6: Final verification and commit**
+- [ ] **Step 6: Run final verification and commit docs**
 
-Run the full suite again after docs/UI cleanup, then commit:
+Run the full automated suite again, then:
 
 ```bash
 git add README.md
 git commit -m "docs: explain engine preferences and footer cleanup"
 ```
 
-**Merge gate:** automated suite green + Windows/native smoke green + Chromium smoke green + both owner visual regressions accepted.
+**Merge gate:** automated suite green + Windows/native smoke green + Chromium smoke green + owner visual regressions accepted.
