@@ -1,0 +1,38 @@
+name: Apply Task 10 plan checkpoint
+on:
+  push:
+    branches: [refactor/pdf-cleaner-v2]
+    paths:
+      - _task10_plan_b64.tmp
+      - .github/workflows/apply-task10-plan.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and verify plan
+        run: |
+          base64 -d _task10_plan_b64.tmp > docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md
+          echo 'e40c37c757b0f5c07e38ceff80d79bf9d64835ab137da65cf4c10a8e02e3a474  docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md' | sha256sum -c -
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pytest
+      - name: Verify Task 10 checkpoint
+        run: |
+          python -m pytest -q
+          python -m compileall -q backend native_api.py desktop_app.py scripts/benchmark_v2.py
+      - name: Commit plan checkpoint
+        run: |
+          rm -f _task10_plan_b64.tmp _task10_plan_placeholder.tmp
+          rm -f .github/workflows/apply-task10-plan.yml
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: mark Task 10 complete'
+          git push
