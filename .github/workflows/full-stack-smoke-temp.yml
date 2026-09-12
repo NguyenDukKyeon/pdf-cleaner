@@ -59,9 +59,22 @@ jobs:
           (async () => {
             const browser = await chromium.launch({ headless: true, channel: 'chrome' });
             const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-            const consoleErrors = [];
-            page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
-            page.on('pageerror', err => consoleErrors.push(String(err)));
+            const pageErrors = [];
+            const resourceErrors = [];
+            const requestFailures = [];
+            page.on('pageerror', err => pageErrors.push(String(err)));
+            page.on('response', response => {
+              const url = response.url();
+              if (response.status() >= 400 && !url.endsWith('/favicon.ico')) {
+                resourceErrors.push(`${response.status()} ${url}`);
+              }
+            });
+            page.on('requestfailed', request => {
+              const url = request.url();
+              if (!url.endsWith('/favicon.ico')) {
+                requestFailures.push(`${url}: ${request.failure()?.errorText || 'request failed'}`);
+              }
+            });
 
             await page.addInitScript(() => {
               window.pywebview = {
@@ -130,7 +143,9 @@ jobs:
             assert.equal(await page.locator('#analysisConfidence').innerText(), '99%');
             assert.equal(await page.locator('#openFileBtn').isEnabled(), true);
             assert.match(await page.locator('#lastOutput').innerText(), /qa_clean\.pdf/);
-            assert.equal(consoleErrors.length, 0, `console errors: ${consoleErrors.join(' | ')}`);
+            assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
+            assert.deepEqual(resourceErrors, [], `resource errors: ${resourceErrors.join(' | ')}`);
+            assert.deepEqual(requestFailures, [], `request failures: ${requestFailures.join(' | ')}`);
 
             await page.screenshot({ path: 'full-stack-smoke.png', fullPage: true });
             console.log('Rendered frontend + primary interaction flow: PASS');
