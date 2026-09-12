@@ -1,0 +1,43 @@
+name: Fix V2 plan status
+
+on:
+  push:
+    branches:
+      - refactor/pdf-cleaner-v2
+    paths:
+      - .github/workflows/fix-plan-status.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/pdf-cleaner-v2
+          fetch-depth: 0
+      - name: Fix progress table and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path('docs/superpowers/plans/2026-09-10-pdf-cleaner-v2.md')
+          text = path.read_text(encoding='utf-8')
+          for task in (0, 6, 11):
+              pattern = rf'(?m)^(\| {task} \|[^\n]*\|)\s*(?:IN PROGRESS|NOT STARTED|COMPLETE)\s*\|$'
+              text, count = re.subn(pattern, rf'\1 COMPLETE |', text, count=1)
+              if count != 1:
+                  raise SystemExit(f'could not update progress row for task {task}')
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/fix-plan-status.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs: close remaining V2 progress rows'
+          git push origin HEAD:refactor/pdf-cleaner-v2
