@@ -147,3 +147,47 @@ def test_preset_picker_and_accessibility_contract() -> None:
     assert "card.setAttribute('aria-checked', card.dataset.preset === selectedPreset ? 'true' : 'false')" in JS
 
 
+def test_preset_quality_invariants_and_footer_cleanup_defaults() -> None:
+    import re
+
+    # Default selected preset remains 'balanced'
+    assert "let selectedPreset = 'balanced';" in JS
+
+    # Footer cleanup default remains 'auto'
+    assert "let selectedFooterCleanup = 'auto';" in JS
+
+    # Extract presetValues object definition from JS
+    match = re.search(r"let presetValues = ({.*?});", JS, re.DOTALL)
+    assert match is not None, "presetValues definition must exist in app.js"
+    preset_block = match.group(1)
+
+    # Invariants for each preset:
+    # Fast: dpi 200, output_dpi 200, quality 88
+    # Balanced: dpi 240, output_dpi 240, quality 92
+    # HighQuality: dpi 320, output_dpi 320, quality 95
+    # Safe: dpi 240, output_dpi 240, quality 95, worker request 1 (cpu: 1)
+    expected_invariants = {
+        "fast": {"dpi": 200, "output_dpi": 200, "quality": 88, "cpu": 0},
+        "balanced": {"dpi": 240, "output_dpi": 240, "quality": 92, "cpu": 0},
+        "high_quality": {"dpi": 320, "output_dpi": 320, "quality": 95, "cpu": 0},
+        "safe_mode": {"dpi": 240, "output_dpi": 240, "quality": 95, "cpu": 1},
+    }
+    for preset_name, expected in expected_invariants.items():
+        assert f"{preset_name}:" in preset_block
+        for k, v in expected.items():
+            assert re.search(rf"{preset_name}:\s*\{{[^}}]*\b{k}:\s*{v}\b", preset_block) is not None, (
+                f"Preset {preset_name} must have {k}={v}"
+            )
+
+    # selectPreset function must never disable or mutate footer cleanup
+    select_preset_match = re.search(r"function selectPreset\([^)]*\)\s*\{(.*?)\n\}", JS, re.DOTALL)
+    assert select_preset_match is not None
+    assert "selectedFooterCleanup" not in select_preset_match.group(1)
+    assert "footer_cleanup" not in select_preset_match.group(1)
+
+    # commonPayload preserves both preset and footer_cleanup defaults
+    assert "footer_cleanup: selectedFooterCleanup" in JS
+    assert "preset: selectedPreset" in JS
+
+
+

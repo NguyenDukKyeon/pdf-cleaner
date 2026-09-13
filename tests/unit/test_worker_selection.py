@@ -118,3 +118,58 @@ def test_execute_plan_safe_preset_worker_count_is_one(tmp_path):
     )
 
     assert received_kwargs.get("workers") == 1
+
+
+def test_preset_quality_invariants_and_worker_requests():
+    from backend.service import PRESET_ALIASES, _resolve_run_config
+
+    expected = {
+        "fast": {"dpi": 200, "output_dpi": 200, "quality": 88, "cpu": 0},
+        "balanced": {"dpi": 240, "output_dpi": 240, "quality": 92, "cpu": 0},
+        "high_quality": {"dpi": 320, "output_dpi": 320, "quality": 95, "cpu": 0},
+        "safe_mode": {"dpi": 240, "output_dpi": 240, "quality": 95, "cpu": 1},
+    }
+
+    for name, values in expected.items():
+        assert name in PRESET_ALIASES
+        assert PRESET_ALIASES[name]["dpi"] == values["dpi"]
+        assert PRESET_ALIASES[name]["output_dpi"] == values["output_dpi"]
+        assert PRESET_ALIASES[name]["quality"] == values["quality"]
+        assert PRESET_ALIASES[name]["cpu"] == values["cpu"]
+
+        cfg = _resolve_run_config(name, {})
+        assert cfg["quality_profile"] == name
+        assert cfg["dpi"] == values["dpi"]
+        assert cfg["output_dpi"] == values["output_dpi"]
+        assert cfg["quality"] == values["quality"]
+        assert cfg["cpu"] == values["cpu"]
+
+    # Default selected preset remains balanced
+    for fallback in ("", None, "invalid_name"):
+        default_cfg = _resolve_run_config(fallback, {})
+        assert default_cfg["quality_profile"] == "balanced"
+        assert default_cfg["dpi"] == 240
+        assert default_cfg["output_dpi"] == 240
+        assert default_cfg["quality"] == 92
+        assert default_cfg["cpu"] == 0
+
+
+def test_footer_cleanup_default_remains_auto_for_all_presets():
+    import inspect
+    from backend.engine.pipeline_v2.execute import execute_plan
+    from backend.engine.strategies.raster_template import RasterTemplateStrategy
+    from backend.service import FOOTER_CLEANUPS, PRESET_ALIASES
+
+    assert "auto" in FOOTER_CLEANUPS
+
+    # Signature default for footer_cleanup must be 'auto'
+    sig = inspect.signature(execute_plan)
+    assert sig.parameters["footer_cleanup"].default == "auto"
+
+    strat_sig = inspect.signature(RasterTemplateStrategy.execute)
+    assert strat_sig.parameters["footer_cleanup"].default == "auto"
+
+    # Presets definition must not override or disable footer_cleanup
+    for preset_name in PRESET_ALIASES:
+        assert "footer_cleanup" not in PRESET_ALIASES[preset_name]
+

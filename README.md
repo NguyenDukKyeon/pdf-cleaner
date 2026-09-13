@@ -99,12 +99,20 @@ V2 kiểm tra nhiều lớp trước khi chấp nhận output:
 - Với đường TaiLieuOnThi-guided, có thêm guard về thay đổi ngoài vùng tin cậy và kích thước output.
 - Chỉ promote staging khi QC đạt; overwrite vẫn giữ backup.
 
-## Preset
+## Preset & Hiệu năng an toàn (Safe Performance)
 
-- **Fast:** ưu tiên tốc độ.
-- **Balanced:** mặc định, cân bằng tốc độ/chất lượng.
-- **High Quality:** ưu tiên chất lượng.
-- **Safe:** bảo thủ hơn và giới hạn worker.
+Hệ thống cung cấp 4 preset chuẩn hóa, đảm bảo tính bất biến (invariants) về chất lượng và độ an toàn:
+
+- **Fast:** Dành cho công việc cần ưu tiên tốc độ (speed-sensitive work) với các giá trị DPI và chất lượng thấp hơn hiện hành (`dpi: 200`, `output_dpi: 200`, `quality: 88`, auto workers).
+- **Balanced:** Mặc định khuyến nghị (recommended default), cân bằng tối ưu giữa tốc độ xử lý và độ sắc nét tài liệu (`dpi: 240`, `output_dpi: 240`, `quality: 92`, auto workers).
+- **High Quality:** Ưu tiên độ trung thực cao hơn (higher fidelity), thời gian xử lý chậm hơn (slower) (`dpi: 320`, `output_dpi: 320`, `quality: 95`, auto workers).
+- **Safe:** Chế độ bảo thủ chạy một worker (conservative single-worker mode), giới hạn tài nguyên để tránh nghẽn RAM/CPU trên máy yếu hoặc file phức tạp (`dpi: 240`, `output_dpi: 240`, `quality: 95`, worker request = 1).
+
+### Nguyên tắc chất lượng & hiệu năng bất biến
+
+- **Footer visual QC remains active for every preset:** Cơ chế kiểm tra và làm sạch chân trang (Footer visual QC & Polish) mặc định là `auto` trên mọi preset. Preset Fast tuyệt đối không tắt hay bỏ qua bước làm sạch chân trang.
+- **Analysis cache applies only to unchanged files within the current app process:** Bộ nhớ đệm phân tích cấu trúc tài liệu V2 chỉ áp dụng cho các file hoàn toàn không thay đổi (xác thực qua kích thước file, mtime và mẫu băm SHA-256). Cache này chỉ tồn tại trong bộ nhớ của tiến trình ứng dụng hiện tại (in-process), không lưu ra đĩa và tự động bị hủy/làm mới khi file có thay đổi.
+- **Auto Smart still owns safe strategy selection unless the user requests a compatibility-gated engine preference:** Engine `Auto Smart` luôn toàn quyền sở hữu việc lựa chọn chiến lược an toàn nhất cho từng tài liệu dựa trên cấu trúc thực tế, trừ khi người dùng chủ động yêu cầu một engine preference cụ thể đã qua cổng kiểm tra tương thích (compatibility gates).
 
 Các giá trị DPI/JPEG chi tiết có thể xem/chỉnh ở tab **Cài đặt nâng cao**.
 
