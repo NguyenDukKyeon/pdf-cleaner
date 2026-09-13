@@ -103,22 +103,35 @@
             <div class="card-head">
               <span class="step">3</span>
               <div>
-                <h2>Chế độ xử lý tự động</h2>
-                <p>Auto V2 phân tích cấu trúc PDF rồi chọn chiến lược phù hợp; bạn chỉ cần chọn mức chất lượng.</p>
+                <h2>Engine xử lý &amp; Preset chất lượng</h2>
+                <p>Auto Smart là mặc định an toàn; bạn có thể chọn engine hoặc mức chất lượng phù hợp.</p>
               </div>
             </div>
-            <div class="auto-mode-card" aria-label="Auto V2">
-              <span class="auto-mode-badge">AUTO V2</span>
-              <div>
-                <strong>Tự động nhận dạng loại PDF và watermark</strong>
-                <small>Ưu tiên giữ cấu trúc PDF; chỉ rasterize khi thực sự cần.</small>
-              </div>
+            <label class="section-subhead"><span>Engine xử lý:</span></label>
+            <div id="enginePicker" class="picker-grid engine-picker" role="radiogroup" aria-label="Lựa chọn engine xử lý">
+              <button type="button" class="engine-card selected" data-engine="auto_smart" role="radio" aria-checked="true">
+                <b>Auto Smart</b>
+                <small>Tự chọn cách xử lý nhanh và an toàn nhất cho từng PDF.</small>
+              </button>
+              <button type="button" class="engine-card" data-engine="stream_clean" role="radio" aria-checked="false">
+                <b>Stream Clean</b>
+                <small>Nhanh nhất — giữ nguyên chữ, vector và chất lượng PDF gốc.</small>
+              </button>
+              <button type="button" class="engine-card" data-engine="raster_clean" role="radio" aria-checked="false">
+                <b>Raster Clean</b>
+                <small>Dành cho PDF scan/ảnh — ưu tiên giữ chi tiết ảnh gốc.</small>
+              </button>
+              <button type="button" class="engine-card" data-engine="compatibility_clean" role="radio" aria-checked="false">
+                <b>Compatibility Clean</b>
+                <small>Cho PDF khó hoặc chưa đủ chắc chắn để dùng engine nhanh.</small>
+              </button>
             </div>
+            <label class="section-subhead"><span>Preset chất lượng:</span></label>
             <div id="presetPicker" class="picker-grid preset-picker" role="radiogroup" aria-label="Preset chất lượng">
-              <button class="preset-card" data-preset="fast"><b>Fast</b><small>Tốc độ cao, chất lượng vừa</small></button>
-              <button class="preset-card selected" data-preset="balanced"><b>Balanced</b><small>Cân bằng tốc độ/chất lượng</small></button>
-              <button class="preset-card" data-preset="high_quality"><b>High Quality</b><small>Chất lượng cao nhất</small></button>
-              <button class="preset-card" data-preset="safe_mode"><b>Safe</b><small>Bảo thủ, chạy 1 worker</small></button>
+              <button type="button" class="preset-card" data-preset="fast" role="radio" aria-checked="false"><b>Fast</b><small>Tốc độ cao, chất lượng vừa</small></button>
+              <button type="button" class="preset-card selected" data-preset="balanced" role="radio" aria-checked="true"><b>Balanced</b><small>Cân bằng tốc độ/chất lượng</small></button>
+              <button type="button" class="preset-card" data-preset="high_quality" role="radio" aria-checked="false"><b>High Quality</b><small>Chất lượng cao nhất</small></button>
+              <button type="button" class="preset-card" data-preset="safe_mode" role="radio" aria-checked="false"><b>Safe</b><small>Bảo thủ, chạy 1 worker</small></button>
             </div>
             <p id="presetHint" class="hint">Cân bằng giữa tốc độ và chất lượng.</p>
           </article>
@@ -205,16 +218,47 @@
       <article class="card settings-card">
         <h2>Bảo vệ nội dung — Auto V2</h2>
         <p>Đây chỉ là gợi ý an toàn cho router, không chọn watermark engine trực tiếp.</p>
-        <label class="form-field">
-          <span>Content protection profile</span>
-          <select id="contentProfile">
-            <option value="auto" selected>Auto</option>
-            <option value="math">Toán / biểu đồ</option>
-            <option value="physics">Vật lý</option>
-            <option value="chemistry">Hóa học</option>
-            <option value="ebook">Ebook</option>
-          </select>
-        </label>
+        <div id="contentProfilePicker" class="protection-picker-grid" role="radiogroup" aria-label="Bảo vệ nội dung">
+          <button type="button" class="protection-card selected" data-content-profile="auto" role="radio" aria-checked="true">
+            <b>Auto</b>
+            <small>Tự cân bằng làm sạch và bảo toàn nội dung.</small>
+          </button>
+          <button type="button" class="protection-card" data-content-profile="math" role="radio" aria-checked="false">
+            <b>Formula & Diagram Safe</b>
+            <small>Giữ công thức, bảng, đồ thị và đường kẻ rõ nét.</small>
+          </button>
+          <button type="button" class="protection-card" data-content-profile="physics" role="radio" aria-checked="false">
+            <b>Diagram & Line Safe</b>
+            <small>Ưu tiên sơ đồ, hình minh họa và các nét mảnh.</small>
+          </button>
+          <button type="button" class="protection-card" data-content-profile="chemistry" role="radio" aria-checked="false">
+            <b>Symbol & Structure Safe</b>
+            <small>Bảo vệ ký hiệu, chỉ số nhỏ và cấu trúc công thức.</small>
+          </button>
+          <button type="button" class="protection-card" data-content-profile="ebook" role="radio" aria-checked="false">
+            <b>Text & Image Safe</b>
+            <small>Giữ chữ dài, ảnh, bìa màu và bố cục ebook.</small>
+          </button>
+        </div>
+      </article>
+
+      <article class="card settings-card">
+        <h2>Làm sạch chân trang (Footer cleanup)</h2>
+        <p>Xử lý vệt mờ watermark còn sót ở chân trang (URL) ở độ phân giải gốc, bảo vệ số trang và nội dung thật.</p>
+        <div id="footerCleanup" class="footer-cleanup-picker" role="radiogroup" aria-label="Làm sạch chân trang">
+          <button type="button" class="footer-cleanup-card selected" data-footer-cleanup="auto" role="radio" aria-checked="true">
+            <b>Auto</b>
+            <small>Tự tăng mức làm sạch nếu chân trang vẫn còn vệt mờ.</small>
+          </button>
+          <button type="button" class="footer-cleanup-card" data-footer-cleanup="standard" role="radio" aria-checked="false">
+            <b>Standard</b>
+            <small>Làm sạch nhẹ vùng URL ở chân trang.</small>
+          </button>
+          <button type="button" class="footer-cleanup-card" data-footer-cleanup="deep" role="radio" aria-checked="false">
+            <b>Deep</b>
+            <small>Làm sạch kỹ vệt mờ còn sót, vẫn giữ số trang và nội dung thật.</small>
+          </button>
+        </div>
       </article>
 
       <article class="card settings-card">
