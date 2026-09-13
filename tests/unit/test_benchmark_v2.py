@@ -120,3 +120,29 @@ def test_benchmark_main_cli(tmp_path: Path):
     assert len(payload["runs"]) == 1
     assert "summary" in payload
     assert "median_total_seconds" in payload["summary"]
+
+
+def test_run_benchmark_disambiguates_identical_stems(tmp_path: Path):
+    dir1 = tmp_path / "folder_a"
+    dir2 = tmp_path / "folder_b"
+    dir1.mkdir(parents=True, exist_ok=True)
+    dir2.mkdir(parents=True, exist_ok=True)
+
+    pdf1 = dir1 / "common_name.pdf"
+    pdf2 = dir2 / "common_name.pdf"
+    make_raster_pdf(pdf1, pages=1)
+    make_raster_pdf(pdf2, pages=1)
+
+    out_dir = tmp_path / "bench_out"
+    report = run_benchmark([pdf1, pdf2], preset="balanced", repeat=1, output_dir=out_dir)
+
+    assert len(report["runs"]) == 2
+    out1 = Path(report["runs"][0]["output"])
+    out2 = Path(report["runs"][1]["output"])
+
+    assert out1 != out2
+    assert out1.exists()
+    assert out2.exists()
+    assert "folder_a" in out1.name
+    assert "folder_b" in out2.name
+

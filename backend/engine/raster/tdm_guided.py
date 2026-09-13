@@ -443,7 +443,6 @@ def clean_tailieuonthi_document(
 
     results_by_index: dict[int, tuple[Path, dict[str, object]]] = {}
     completed_count = 0
-    progress_lock = threading.Lock()
 
     with tempfile.TemporaryDirectory(prefix="pdfcleaner_tdm_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
@@ -460,11 +459,9 @@ def clean_tailieuonthi_document(
                         raise RuntimeError("cancelled")
                     index, page_png, metrics = future.result()
                     results_by_index[index] = (page_png, metrics)
-                    with progress_lock:
-                        completed_count += 1
-                        current_completed = completed_count
+                    completed_count += 1
                     if progress:
-                        progress(current_completed, total, "TDM-guided native watermark repair")
+                        progress(completed_count, total, "TDM-guided native watermark repair")
                     if log:
                         page_res = float(metrics.get("watermark_residual_score", 0.0) or 0.0)
                         page_chg = int(metrics.get("changed_pixels", 0) or 0)

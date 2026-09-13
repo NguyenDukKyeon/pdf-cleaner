@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import collections
+import hashlib
 import json
 from pathlib import Path
 import statistics
@@ -166,14 +168,22 @@ def run_benchmark(
     all_runs: list[dict[str, Any]] = []
     files_data: dict[str, Any] = {}
 
-    for raw_path in pdf_paths:
-        pdf_path = Path(raw_path).expanduser().resolve()
+    resolved_paths = [Path(p).expanduser().resolve() for p in pdf_paths]
+    stem_counts = collections.Counter(p.stem for p in resolved_paths)
+
+    for pdf_path in resolved_paths:
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
+        file_tag = pdf_path.stem
+        if stem_counts[pdf_path.stem] > 1:
+            parent_part = f"{pdf_path.parent.name}_" if pdf_path.parent.name else ""
+            path_hash = hashlib.sha256(str(pdf_path).encode("utf-8")).hexdigest()[:6]
+            file_tag = f"{parent_part}{pdf_path.stem}_{path_hash}"
+
         file_runs: list[dict[str, Any]] = []
         for run_idx in range(1, repeat + 1):
-            run_output = out_dir / f"{pdf_path.stem}_{preset}_run{run_idx}.pdf"
+            run_output = out_dir / f"{file_tag}_{preset}_run{run_idx}.pdf"
             print(f"Running [{run_idx}/{repeat}] for {pdf_path.name}...")
             run_data = run_single_benchmark(
                 pdf_path, run_output, preset=preset, extra_options=extra_options

@@ -262,3 +262,74 @@ def test_pipeline_v2_analyze_document_uses_cache_and_clear(tmp_path, monkeypatch
     prof3 = analyze_document(pdf_path)
     assert call_count == 2
     assert prof3.page_count == 5
+
+
+def test_analysis_cache_hit_and_miss_with_options():
+    cache = AnalysisCache(max_entries=32)
+    path = Path("/fake/test_doc.pdf")
+    fp = AnalysisFingerprint(size=12345, mtime_ns=1000000000, sample_sha256="a" * 64)
+    profile1 = DocumentProfile(page_count=3, kind=DocumentKind.VECTOR, confidence=0.98)
+    profile2 = DocumentProfile(page_count=5, kind=DocumentKind.VECTOR, confidence=0.95)
+
+    opts1 = (("stages", (3, 5)),)
+    opts2 = (("stages", (3, 8)),)
+
+    cache.put(path, fp, profile1, options=opts1)
+
+    # Hit with same options tuple
+    assert cache.get(path, fp, options=opts1) is profile1
+    # Hit when passed as equivalent dict
+    assert cache.get(path, fp, options={"stages": [3, 5]}) is profile1
+
+    # Miss with different options
+    assert cache.get(path, fp, options=opts2) is None
+    assert cache.get(path, fp, options={"stages": (3, 8)}) is None
+    # Miss with default / None options
+    assert cache.get(path, fp) is None
+
+    # Store profile2 with opts2
+    cache.put(path, fp, profile2, options=opts2)
+    assert cache.get(path, fp, options=opts1) is profile1
+    assert cache.get(path, fp, options=opts2) is profile2
+
+
+def test_pipeline_v2_analyze_document_options_reanalysis(tmp_path, monkeypatch):
+    import backend.engine.pipeline_v2.analyze as analyze_mod
+
+    pdf_path = make_vector_overlay_pdf(tmp_path / "cached_opts_doc.pdf", pages=8)
+    clear_analysis_cache()
+
+    original_analyze = analyze_mod._analyze_document
+    call_count = 0
+
+    def spy_analyze(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_analyze(*args, **kwargs)
+
+    monkeypatch.setattr(analyze_mod, "_analyze_document", spy_analyze)
+
+    # Initial call with stages (3, 5) -> miss -> calls analyzer
+    prof1 = analyze_document(pdf_path, options={"stages": (3, 5)})
+    assert call_count == 1
+
+    # Same options -> cache hit -> no new analyzer call
+    prof1_again = analyze_document(pdf_path, options={"stages": [3, 5]})
+    assert call_count == 1
+    assert prof1_again is prof1
+
+    # Different stages option -> cache miss -> re-executes analyzer
+    prof2 = analyze_document(pdf_path, options={"stages": (3, 8)})
+    assert call_count == 2
+    assert prof2 is not None
+
+    # Different max_samples option -> cache miss -> re-executes analyzer
+    prof3 = analyze_document(pdf_path, options={"max_samples": 4})
+    assert call_count == 3
+    assert prof3 is not None
+
+    # Calling again with max_samples 4 -> hit -> no new call
+    prof3_again = analyze_document(pdf_path, options={"max_samples": 4})
+    assert call_count == 3
+    assert prof3_again is prof3
+

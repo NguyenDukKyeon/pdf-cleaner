@@ -6,7 +6,48 @@ import hashlib
 from pathlib import Path
 import threading
 
+from typing import Any
+
 from backend.engine.analyzer.models import DocumentProfile
+
+
+def freeze_analysis_options(
+    options: tuple[tuple[str, Any], ...] | dict[str, Any] | None = None,
+) -> tuple[tuple[str, Any], ...]:
+    if not options:
+        return ()
+    if isinstance(options, dict):
+        items = []
+        for k, v in options.items():
+            items.append((str(k), _freeze_val(v)))
+        return tuple(sorted(items, key=lambda x: x[0]))
+    if isinstance(options, (tuple, list)):
+        items = []
+        for item in options:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                k, v = item
+                items.append((str(k), _freeze_val(v)))
+            else:
+                items.append((str(item), True))
+        return tuple(sorted(items, key=lambda x: x[0]))
+    return ()
+
+
+def _freeze_val(v: Any) -> Any:
+    if isinstance(v, (list, tuple)):
+        return tuple(_freeze_val(x) for x in v)
+    if isinstance(v, set):
+        try:
+            return tuple(sorted(_freeze_val(x) for x in v))
+        except TypeError:
+            return tuple(sorted(str(x) for x in v))
+    if isinstance(v, dict):
+        return tuple(sorted((str(k), _freeze_val(val)) for k, val in v.items()))
+    try:
+        hash(v)
+        return v
+    except TypeError:
+        return str(v)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,16 +92,25 @@ def fingerprint_pdf(path: str | Path, sample_bytes: int = 65536) -> AnalysisFing
     )
 
 
+CacheKey = tuple[Path, AnalysisFingerprint, tuple[tuple[str, Any], ...]]
+
+
 class AnalysisCache:
     def __init__(self, max_entries: int = 32) -> None:
         if max_entries <= 0:
             raise ValueError("max_entries must be positive")
         self.max_entries = int(max_entries)
         self._lock = threading.Lock()
-        self._entries: OrderedDict[tuple[Path, AnalysisFingerprint], DocumentProfile] = OrderedDict()
+        self._entries: OrderedDict[CacheKey, DocumentProfile] = OrderedDict()
 
-    def get(self, path: Path | str, fingerprint: AnalysisFingerprint) -> DocumentProfile | None:
-        key = (Path(path).resolve(), fingerprint)
+    def get(
+        self,
+        path: Path | str,
+        fingerprint: AnalysisFingerprint,
+        options: tuple[tuple[str, Any], ...] | dict[str, Any] | None = None,
+    ) -> DocumentProfile | None:
+        norm_options = freeze_analysis_options(options)
+        key: CacheKey = (Path(path).resolve(), fingerprint, norm_options)
         with self._lock:
             profile = self._entries.get(key)
             if profile is not None:
@@ -68,10 +118,17 @@ class AnalysisCache:
                 return profile
             return None
 
-    def put(self, path: Path | str, fingerprint: AnalysisFingerprint, profile: DocumentProfile) -> None:
+    def put(
+        self,
+        path: Path | str,
+        fingerprint: AnalysisFingerprint,
+        profile: DocumentProfile,
+        options: tuple[tuple[str, Any], ...] | dict[str, Any] | None = None,
+    ) -> None:
         if not isinstance(profile, DocumentProfile):
             raise TypeError(f"Expected DocumentProfile, got {type(profile).__name__}")
-        key = (Path(path).resolve(), fingerprint)
+        norm_options = freeze_analysis_options(options)
+        key: CacheKey = (Path(path).resolve(), fingerprint, norm_options)
         with self._lock:
             self._entries[key] = profile
             self._entries.move_to_end(key)
@@ -85,3 +142,4 @@ class AnalysisCache:
     def __len__(self) -> int:
         with self._lock:
             return len(self._entries)
+

@@ -219,10 +219,10 @@ def analyze_document(
                 return profile
 
             best = max(profile.watermark_candidates, key=lambda c: c.confidence, default=None)
-            if len(stage_pages) <= 3:
+            if stage_idx == 0:
                 if profile.confidence >= 0.95 and best is not None and best.confidence >= 0.95:
                     return profile
-            elif len(stage_pages) <= 5:
+            elif stage_idx == 1:
                 if profile.confidence >= 0.90 and best is not None and best.confidence >= 0.90:
                     return profile
 
