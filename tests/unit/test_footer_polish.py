@@ -328,3 +328,27 @@ def test_ratio_box_to_pixels_public_and_compatibility():
     assert px == (100, 160, 500, 480)
 
 
+def test_auto_polishes_localized_visible_residue_even_when_aggregate_score_is_low():
+    """A small visible footer ghost must not bypass auto merely because ROI-normalized score is low."""
+    page = _make_synthetic_page(has_watermark=False)
+    height, width = page.shape[:2]
+    cv2.putText(
+        page,
+        "TLO",
+        (int(round(0.46 * width)), int(round(0.982 * height))),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.34,
+        (165, 165, 165),
+        1,
+        cv2.LINE_AA,
+    )
+
+    config = FooterPolishConfig(level="auto")
+    score_before = score_footer_residual(page, config=config)
+    assert 0.0 < score_before <= config.residual_threshold
+
+    polished, metrics = polish_footer_residual(page, config=config)
+
+    assert metrics.changed_pixels > 0
+    assert metrics.residual_score_after < score_before
+    assert metrics.residual_score_after <= 0.001
