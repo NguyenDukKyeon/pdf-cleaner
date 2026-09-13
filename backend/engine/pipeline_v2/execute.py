@@ -1,4 +1,5 @@
 from __future__ import annotations
+import inspect
 import os
 from pathlib import Path
 import time
@@ -30,7 +31,7 @@ def _safe_unlink(path: Path) -> None:
     try: path.unlink(missing_ok=True)
     except Exception: pass
 
-def execute_plan(input_path: str | Path, output_path: str | Path, plan: ProcessingPlan, callbacks: dict | None = None, *, strategy=None, legacy_strategy=None, allow_legacy_fallback: bool = True, requested_workers: int = 0, dpi: int = 240, output_dpi: int = 240, quality: int = 92) -> ProcessingReport:
+def execute_plan(input_path: str | Path, output_path: str | Path, plan: ProcessingPlan, callbacks: dict | None = None, *, strategy=None, legacy_strategy=None, allow_legacy_fallback: bool = True, requested_workers: int = 0, dpi: int = 240, output_dpi: int = 240, quality: int = 92, footer_cleanup: str = "auto") -> ProcessingReport:
     input_path = Path(input_path).expanduser().resolve(); output_path = Path(output_path).expanduser().resolve(); output_path.parent.mkdir(parents=True, exist_ok=True)
     callbacks = dict(callbacks or {}); log = callbacks.get('log'); progress = callbacks.get('progress'); should_cancel = callbacks.get('should_cancel')
     with fitz.open(str(input_path)) as doc: page_count = max(1, int(doc.page_count))
@@ -41,6 +42,17 @@ def execute_plan(input_path: str | Path, output_path: str | Path, plan: Processi
         try:
             kwargs = {'log':log,'progress':progress,'should_cancel':should_cancel}
             if isinstance(chosen, LegacyStrategy): kwargs.update(workers=workers,dpi=dpi,output_dpi=output_dpi,quality=quality)
+            elif isinstance(chosen, RasterTemplateStrategy): kwargs.update(workers=workers)
+            try:
+                if 'workers' in inspect.signature(chosen.execute).parameters and 'workers' not in kwargs:
+                    kwargs['workers'] = workers
+            except Exception:
+                pass
+            try:
+                if 'footer_cleanup' in inspect.signature(chosen.execute).parameters:
+                    kwargs['footer_cleanup'] = footer_cleanup
+            except Exception:
+                pass
             result = chosen.execute(input_path, staging, plan, **kwargs)
         except Exception as exc:
             _safe_unlink(staging)
@@ -48,10 +60,24 @@ def execute_plan(input_path: str | Path, output_path: str | Path, plan: Processi
             used_fallback = True; fallback_reason = str(exc); active_name = StrategyKind.LEGACY.value
             fallback = legacy_strategy or LegacyStrategy(); kwargs = {'log':log,'progress':progress,'should_cancel':should_cancel}
             if isinstance(fallback, LegacyStrategy): kwargs.update(workers=workers,dpi=dpi,output_dpi=output_dpi,quality=quality)
+            elif isinstance(fallback, RasterTemplateStrategy): kwargs.update(workers=workers)
+            try:
+                if 'workers' in inspect.signature(fallback.execute).parameters and 'workers' not in kwargs:
+                    kwargs['workers'] = workers
+            except Exception:
+                pass
+            try:
+                if 'footer_cleanup' in inspect.signature(fallback.execute).parameters:
+                    kwargs['footer_cleanup'] = footer_cleanup
+            except Exception:
+                pass
             result = fallback.execute(input_path, staging, plan, **kwargs)
         if not staging.exists(): raise RuntimeError('strategy completed without creating staging output')
         os.replace(str(staging), str(output_path))
         processing_seconds = time.perf_counter() - started
-        return ProcessingReport(strategy=active_name, confidence=plan.confidence, output_path=str(output_path), worker_count=workers, used_fallback=used_fallback, fallback_reason=fallback_reason, changed_pages=int(getattr(result,'changed_pages',0)), removed_items=int(getattr(result,'removed_items',0)), rasterized_pages=int(getattr(result,'rasterized_pages',0)), native_image_pages=int(getattr(result,'native_image_pages',0)), ocr_calls=int(getattr(result,'ocr_calls',0)), processing_seconds=processing_seconds, total_seconds=processing_seconds, metadata=dict(getattr(result,'metadata',{}) or {}))
+        report_meta = dict(getattr(result, 'metadata', {}) or {})
+        report_meta.setdefault('requested_engine', getattr(plan, 'requested_engine', 'auto_smart'))
+        report_meta.setdefault('footer_cleanup', footer_cleanup)
+        return ProcessingReport(strategy=active_name, confidence=plan.confidence, output_path=str(output_path), worker_count=workers, used_fallback=used_fallback, fallback_reason=fallback_reason, changed_pages=int(getattr(result,'changed_pages',0)), removed_items=int(getattr(result,'removed_items',0)), rasterized_pages=int(getattr(result,'rasterized_pages',0)), native_image_pages=int(getattr(result,'native_image_pages',0)), ocr_calls=int(getattr(result,'ocr_calls',0)), processing_seconds=processing_seconds, total_seconds=processing_seconds, metadata=report_meta)
     finally:
         _safe_unlink(staging)

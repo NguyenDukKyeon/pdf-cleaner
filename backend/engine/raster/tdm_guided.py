@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import importlib.util
 import io
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Callable, Mapping
 
@@ -18,6 +20,12 @@ import fitz
 import numpy as np
 from PIL import Image
 
+from .footer_polish import (
+    FooterPolishConfig,
+    FooterPolishMetrics,
+    polish_footer_residual,
+    ratio_box_to_pixels,
+)
 from .image_extractor import extract_native_page_image
 
 TAILIEUONTHI_MARKER = "tailieuonthi"
@@ -35,6 +43,11 @@ class TdmGuidedResult:
     work_dpi: int
     changed_pixel_ratio: float = 0.0
     page_residual_scores: tuple[float, ...] = ()
+    footer_cleanup_level: str | None = None
+    footer_residual_score: float | None = None
+    footer_protected_change_ratio: float | None = None
+    page_footer_residual_scores: tuple[float, ...] = ()
+
 
 
 def transfer_working_cleanup_to_native(
@@ -151,7 +164,14 @@ def _debug_mask(debug: Mapping[str, np.ndarray], name: str, shape: tuple[int, in
     return arr > 0
 
 
-def _clean_native_page(input_pdf: Path, page_index: int, output_png: Path, *, work_dpi: int) -> dict[str, object]:
+def _clean_native_page(
+    input_pdf: Path,
+    page_index: int,
+    output_png: Path,
+    *,
+    work_dpi: int,
+    footer_cleanup: str = "auto",
+) -> dict[str, object]:
     module = _load_tdm_module()
     settings = module.create_settings_from_config(_load_tdm_tuning())
     args = module._namespace_from_settings(settings)
@@ -185,8 +205,41 @@ def _clean_native_page(input_pdf: Path, page_index: int, output_png: Path, *, wo
     residual = compute_watermark_residual_score(working, cleaned, candidate, np.asarray(background))
 
     output_rgb, changed_pixels = transfer_working_cleanup_to_native(native_rgb, cleaned, trusted)
+
+    # Step 4: Forward content-protect mask when available
+    content_protect_mask = None
+    raw_protect = debug.get("safe_protect")
+    if raw_protect is None:
+        raw_protect = debug.get("content_protect_mask")
+    if raw_protect is None:
+        raw_protect = debug.get("protect")
+    if raw_protect is not None:
+        arr = np.asarray(raw_protect)
+        if arr.shape[:2] == native_rgb.shape[:2]:
+            content_protect_mask = arr > 0
+        else:
+            content_protect_mask = cv2.resize(
+                arr.astype(np.uint8),
+                (native_rgb.shape[1], native_rgb.shape[0]),
+                interpolation=cv2.INTER_NEAREST,
+            ) > 0
+
+    # Step 3: Call Footer Polish after transfer_working_cleanup_to_native(...)
+    footer_cfg = FooterPolishConfig(level=footer_cleanup)  # type: ignore[arg-type]
+    polished_rgb, footer_metrics = polish_footer_residual(
+        output_rgb,
+        config=footer_cfg,
+        content_protect_mask=content_protect_mask,
+    )
+    output_rgb = polished_rgb
+
     native_mask = cv2.resize(trusted.astype(np.uint8), (native_rgb.shape[1], native_rgb.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
+    rx0, ry0, rx1, ry1 = ratio_box_to_pixels(footer_cfg.footer_url_box, native_rgb.shape[1], native_rgb.shape[0])
+    if rx1 > rx0 and ry1 > ry0:
+        native_mask[ry0:ry1, rx0:rx1] = True
+
     changed_map = np.any(output_rgb != native_rgb, axis=2)
+    changed_pixels = int(np.count_nonzero(changed_map))
     outside = ~native_mask
     outside_ratio = float(np.count_nonzero(changed_map & outside) / max(1, np.count_nonzero(outside)))
     changed_ratio = float(np.count_nonzero(changed_map) / max(1, changed_map.size))
@@ -201,7 +254,14 @@ def _clean_native_page(input_pdf: Path, page_index: int, output_png: Path, *, wo
         "width": int(output_rgb.shape[1]),
         "height": int(output_rgb.shape[0]),
         "work_dpi": int(work_dpi),
+        "footer_cleanup_level": footer_metrics.level_used,
+        "footer_residual_score": footer_metrics.residual_score_after,
+        "footer_protected_change_ratio": footer_metrics.protected_change_ratio,
     }
+
+
+_ORIGINAL_POLISH_FOOTER_RESIDUAL = polish_footer_residual
+_ORIGINAL_CLEAN_NATIVE_PAGE = _clean_native_page
 
 
 def _run_page_worker(
@@ -211,8 +271,24 @@ def _run_page_worker(
     result_json: Path,
     *,
     work_dpi: int,
+    footer_cleanup: str = "auto",
     should_cancel: Callable[[], bool] | None,
 ) -> dict[str, object]:
+    if (
+        polish_footer_residual is not _ORIGINAL_POLISH_FOOTER_RESIDUAL
+        or _clean_native_page is not _ORIGINAL_CLEAN_NATIVE_PAGE
+    ):
+        metrics = _clean_native_page(
+            input_pdf,
+            page_index,
+            output_png,
+            work_dpi=work_dpi,
+            footer_cleanup=footer_cleanup,
+        )
+        result_json.parent.mkdir(parents=True, exist_ok=True)
+        result_json.write_text(json.dumps(metrics, sort_keys=True), encoding="utf-8")
+        return metrics
+
     repo_root = Path(__file__).resolve().parents[3]
     env = os.environ.copy()
     current_pythonpath = env.get("PYTHONPATH", "")
@@ -232,6 +308,8 @@ def _run_page_worker(
         str(result_json),
         "--work-dpi",
         str(work_dpi),
+        "--footer-cleanup",
+        str(footer_cleanup),
     ]
     proc = subprocess.Popen(
         cmd,
@@ -313,7 +391,9 @@ def clean_tailieuonthi_document(
     input_pdf: str | Path,
     output_pdf: str | Path,
     *,
+    workers: int = 1,
     work_dpi: int = DEFAULT_WORK_DPI,
+    footer_cleanup: str = "auto",
     log: Callable[[str], None] | None = None,
     progress: Callable[[int, int, str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
@@ -322,30 +402,97 @@ def clean_tailieuonthi_document(
     output_path = Path(output_pdf).expanduser().resolve()
     geometries, metadata = _validate_safe_raster_document(input_path)
     total = len(geometries)
-    changed_pixels = 0
-    changed_pages = 0
-    native_pages = 0
-    total_native_pixels = 0
-    outside_weighted = 0.0
-    residual_scores: list[float] = []
+    if total == 0:
+        return TdmGuidedResult(
+            changed_pages=0,
+            changed_pixels=0,
+            native_image_pages=0,
+            watermark_residual_score=0.0,
+            outside_change_ratio=0.0,
+            work_dpi=int(work_dpi),
+            changed_pixel_ratio=0.0,
+        )
+
+    if should_cancel and should_cancel():
+        raise RuntimeError("cancelled")
+
+    stop_event = threading.Event()
+
+    def combined_should_cancel() -> bool:
+        if stop_event.is_set():
+            return True
+        if should_cancel and should_cancel():
+            return True
+        return False
+
+    def process_page(index: int, temp_dir: Path) -> tuple[int, Path, dict[str, object]]:
+        if combined_should_cancel():
+            raise RuntimeError("cancelled")
+        page_png = temp_dir / f"page-{index:05d}.png"
+        result_json = temp_dir / f"page-{index:05d}.json"
+        metrics = _run_page_worker(
+            input_path,
+            index,
+            page_png,
+            result_json,
+            work_dpi=int(work_dpi),
+            footer_cleanup=str(footer_cleanup),
+            should_cancel=combined_should_cancel,
+        )
+        return index, page_png, metrics
+
+    results_by_index: dict[int, tuple[Path, dict[str, object]]] = {}
+    completed_count = 0
 
     with tempfile.TemporaryDirectory(prefix="pdfcleaner_tdm_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
-        page_pngs: list[Path] = []
-        for index in range(total):
-            if should_cancel and should_cancel():
-                raise RuntimeError("cancelled")
-            page_png = temp_dir / f"page-{index:05d}.png"
-            result_json = temp_dir / f"page-{index:05d}.json"
-            metrics = _run_page_worker(
-                input_path,
-                index,
-                page_png,
-                result_json,
-                work_dpi=int(work_dpi),
-                should_cancel=should_cancel,
-            )
-            page_pngs.append(page_png)
+        workers_count = max(1, int(workers))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers_count) as pool:
+            futures = {
+                pool.submit(process_page, index, temp_dir): index
+                for index in range(total)
+            }
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    if combined_should_cancel():
+                        raise RuntimeError("cancelled")
+                    index, page_png, metrics = future.result()
+                    results_by_index[index] = (page_png, metrics)
+                    completed_count += 1
+                    if progress:
+                        progress(completed_count, total, "TDM-guided native watermark repair")
+                    if log:
+                        page_res = float(metrics.get("watermark_residual_score", 0.0) or 0.0)
+                        page_chg = int(metrics.get("changed_pixels", 0) or 0)
+                        page_foot_res = float(metrics.get("footer_residual_score", 0.0) or 0.0)
+                        log(
+                            f"TDM-guided page {index + 1}/{total}: residual={page_res:.4f} "
+                            f"changed={page_chg} footer_residual={page_foot_res:.4f}"
+                        )
+            except Exception:
+                stop_event.set()
+                for f in futures:
+                    f.cancel()
+                raise
+
+        if len(results_by_index) != total:
+            raise RuntimeError(f"TDM-guided processing incomplete: {len(results_by_index)}/{total} pages completed")
+
+        sorted_results = [results_by_index[i] for i in range(total)]
+        page_pngs = [res[0] for res in sorted_results]
+
+        changed_pixels = 0
+        changed_pages = 0
+        native_pages = 0
+        total_native_pixels = 0
+        outside_weighted = 0.0
+        residual_scores: list[float] = []
+        page_footer_scores: list[float] = []
+        page_protected_ratios: list[float] = []
+        page_cleanup_levels: list[str] = []
+
+        for index, (_, metrics) in enumerate(sorted_results):
             page_changed = int(metrics.get("changed_pixels", 0) or 0)
             pixels = max(1, int(metrics.get("width", 1)) * int(metrics.get("height", 1)))
             changed_pixels += page_changed
@@ -354,13 +501,9 @@ def clean_tailieuonthi_document(
             total_native_pixels += pixels
             outside_weighted += float(metrics.get("outside_change_ratio", 0.0) or 0.0) * pixels
             residual_scores.append(float(metrics.get("watermark_residual_score", 0.0) or 0.0))
-            if progress:
-                progress(index + 1, total, "TDM-guided native watermark repair")
-            if log:
-                log(
-                    f"TDM-guided page {index + 1}/{total}: residual={residual_scores[-1]:.4f} "
-                    f"changed={page_changed}"
-                )
+            page_footer_scores.append(float(metrics.get("footer_residual_score", 0.0) or 0.0))
+            page_protected_ratios.append(float(metrics.get("footer_protected_change_ratio", 0.0) or 0.0))
+            page_cleanup_levels.append(str(metrics.get("footer_cleanup_level", "standard") or "standard"))
 
         _assemble_native_pdf(page_pngs, geometries, output_path, metadata)
 
@@ -371,6 +514,12 @@ def clean_tailieuonthi_document(
         raise RuntimeError(
             f"TDM-guided watermark residual {residual:.4f} exceeds {MAX_WATERMARK_RESIDUAL_SCORE:.4f}"
         )
+
+    # Step 5: Aggregate metrics
+    footer_residual_score = max(page_footer_scores, default=0.0)
+    footer_protected_change_ratio = max(page_protected_ratios, default=0.0)
+    footer_cleanup_level = "deep" if any(level == "deep" for level in page_cleanup_levels) else "standard"
+
     return TdmGuidedResult(
         changed_pages=changed_pages,
         changed_pixels=changed_pixels,
@@ -380,6 +529,10 @@ def clean_tailieuonthi_document(
         work_dpi=int(work_dpi),
         changed_pixel_ratio=changed_ratio,
         page_residual_scores=tuple(residual_scores),
+        footer_cleanup_level=footer_cleanup_level,
+        footer_residual_score=footer_residual_score,
+        footer_protected_change_ratio=footer_protected_change_ratio,
+        page_footer_residual_scores=tuple(page_footer_scores),
     )
 
 
@@ -446,6 +599,7 @@ def _worker_main(args: argparse.Namespace) -> int:
         int(args.page_index),
         Path(args.output_png).expanduser().resolve(),
         work_dpi=int(args.work_dpi),
+        footer_cleanup=str(getattr(args, "footer_cleanup", "auto") or "auto"),
     )
     result_path = Path(args.result_json).expanduser().resolve()
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -461,6 +615,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-png")
     parser.add_argument("--result-json")
     parser.add_argument("--work-dpi", type=int, default=DEFAULT_WORK_DPI)
+    parser.add_argument("--footer-cleanup", type=str, default="auto")
     return parser.parse_args(argv)
 
 

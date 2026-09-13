@@ -12,3 +12,13 @@ def test_vector_pdf_reports_text_layer_and_repeated_watermark_candidate(tmp_path
     assert any(c.marker == "tailieuonthi" for c in profile.watermark_candidates)
     candidate = next(c for c in profile.watermark_candidates if c.marker == "tailieuonthi")
     assert len(candidate.page_indices) == 3
+
+
+def test_vector_pdf_staged_sampling_stops_early_for_repeated_watermark(tmp_path):
+    pdf = make_vector_overlay_pdf(tmp_path / "vector20.pdf", pages=20)
+    profile = analyze_document(pdf)
+    assert profile.kind is DocumentKind.VECTOR
+    assert len(profile.sampled_pages) == 3
+    candidate = next(c for c in profile.watermark_candidates if c.marker == "tailieuonthi")
+    assert candidate.confidence >= 0.95
+

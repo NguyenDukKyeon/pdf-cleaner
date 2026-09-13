@@ -129,6 +129,7 @@ def process_document_v2(
             dpi=int(options.get("dpi", 240) or 240),
             output_dpi=int(options.get("output_dpi", options.get("dpi", 240)) or 240),
             quality=int(options.get("quality", 92) or 92),
+            footer_cleanup=str(options.get("footer_cleanup") or "auto"),
         )
         pre_qc_metadata = {
             **dict(report.metadata or {}),

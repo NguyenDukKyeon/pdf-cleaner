@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+import cv2
 import fitz
 import numpy as np
 from PIL import Image
@@ -101,9 +102,33 @@ def test_vector_e2e_routes_to_stream_remove_and_qc_ignores_target_region(tmp_pat
     assert result.qc.ok is True
     assert result.qc.outside_change_ratio <= 0.001
     assert result.report.metadata.get("watermark_regions")
+    assert result.report.metadata.get("requested_engine") == "auto_smart"
     text = _all_text(output)
     assert WATERMARK not in text
     assert "Question 1: source content ABCD" in text
+
+
+def test_compatibility_clean_e2e_routes_to_legacy(tmp_path: Path) -> None:
+    source = tmp_path / "vector.pdf"
+    output = tmp_path / "vector-clean.pdf"
+    _make_vector_pdf(source)
+
+    result = process_document_v2(
+        source,
+        output,
+        options={
+            "content_profile": "auto",
+            "engine_preference": "compatibility_clean",
+            "allow_legacy_fallback": False,
+            "qc_dpi": 72,
+            "max_outside_change_ratio": 0.20,
+        },
+    )
+
+    assert result.plan.strategy is StrategyKind.LEGACY
+    assert result.report.strategy == StrategyKind.LEGACY.value
+    assert result.report.metadata.get("requested_engine") == "compatibility_clean"
+    assert result.qc.ok is True
 
 
 def test_hybrid_e2e_routes_to_stream_remove_and_preserves_native_page_image(tmp_path: Path) -> None:
@@ -161,3 +186,178 @@ def test_raster_e2e_uses_native_template_path_without_ocr(tmp_path: Path) -> Non
     with fitz.open(source) as src, fitz.open(output) as out:
         assert src.page_count == out.page_count == 5
         assert [tuple(page.rect) for page in src] == [tuple(page.rect) for page in out]
+
+
+def _make_raster_footer_pdf(path: Path) -> np.ndarray:
+    """Generate a full-page raster PDF with gray footer watermark glyphs, protected colored content, page number and footer rule."""
+    height, width = 1000, 800
+    page_rgb = np.full((height, width, 3), (252, 250, 246), dtype=np.uint8)
+
+    # Upper protected colored content above y = 0.945 * H
+    cv2.putText(
+        page_rgb,
+        "CHUONG 3: GIAI TICH VA HINH HOC TOAN CAO CAP",
+        (80, int(round(0.925 * height))),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (30, 80, 210),
+        2,
+        cv2.LINE_AA,
+    )
+
+    # Thin legitimate footer rule at y = 0.956 * H
+    rule_y = int(round(0.956 * height))
+    cv2.line(
+        page_rgb,
+        (int(round(0.08 * width)), rule_y),
+        (int(round(0.92 * width)), rule_y),
+        (70, 70, 70),
+        1,
+    )
+
+    # Page number glyphs on lower-right (x >= 0.80 * W, y >= 0.955 * H)
+    cv2.putText(
+        page_rgb,
+        "- Trang 42 -",
+        (int(round(0.82 * width)), int(round(0.982 * height))),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (35, 35, 35),
+        2,
+        cv2.LINE_AA,
+    )
+
+    # Centered pale-gray footer watermark glyphs inside footer URL box
+    cv2.putText(
+        page_rgb,
+        "https://TaiLieuOnThi.Net",
+        (int(round(0.33 * width)), int(round(0.985 * height))),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.78,
+        (140, 140, 140),
+        2,
+        cv2.LINE_AA,
+    )
+
+    doc = fitz.open()
+    bio = BytesIO()
+    Image.fromarray(page_rgb).save(bio, format="PNG")
+    p = doc.new_page(width=width, height=height)
+    p.insert_image(p.rect, stream=bio.getvalue())
+    p.insert_link({
+        "kind": fitz.LINK_URI,
+        "from": fitz.Rect(int(round(0.33 * width)), int(round(0.965 * height)), int(round(0.75 * width)), int(round(0.995 * height))),
+        "uri": "https://TaiLieuOnThi.Net",
+    })
+    doc.save(path)
+    doc.close()
+    return page_rgb
+
+
+def test_raster_footer_e2e_cleans_residual_and_preserves_page_numbers_and_content(tmp_path: Path) -> None:
+    source = tmp_path / "raster_footer.pdf"
+    output = tmp_path / "raster_footer_clean.pdf"
+    page_rgb = _make_raster_footer_pdf(source)
+
+    result = process_document_v2(
+        source,
+        output,
+        options={
+            "content_profile": "auto",
+            "footer_cleanup": "auto",
+            "allow_legacy_fallback": False,
+            "qc_dpi": 72,
+        },
+    )
+
+    report = result.report
+    with fitz.open(source) as input_doc, fitz.open(output) as output_doc:
+        assert output_doc.page_count == input_doc.page_count
+        assert report.metadata["footer_residual_score"] <= 0.035
+        assert report.metadata["footer_protected_change_ratio"] <= 0.002
+        assert report.metadata["footer_cleanup_level"] in {"standard", "deep"}
+        assert report.ocr_calls == 0
+
+        xref = output_doc[0].get_images(full=True)[0][0]
+        out_bytes = output_doc.extract_image(xref)["image"]
+        out_rgb = np.array(Image.open(BytesIO(out_bytes)).convert("RGB"))
+
+    # Verify protected page-number and colored-content pixels remain intact (exact equality or 1-gray-level tolerance)
+    height, width = page_rgb.shape[:2]
+
+    # Page-number text pixels on lower right (x >= 0.80 * W, y >= 0.955 * H)
+    px0, py0 = int(round(0.80 * width)), int(round(0.955 * height))
+    pn_region_orig = page_rgb[py0:, px0:]
+    pn_region_out = out_rgb[py0:, px0:]
+    pn_text_mask = np.mean(pn_region_orig, axis=2) < 100
+    assert np.count_nonzero(pn_text_mask) > 0
+    pn_diff = np.max(np.abs(pn_region_out[pn_text_mask].astype(int) - pn_region_orig[pn_text_mask].astype(int)))
+    assert pn_diff <= 1, f"Protected page-number text pixels altered by {pn_diff} gray levels"
+
+    # Protected colored content pixels above y = 0.945 * H
+    uy = int(round(0.945 * height))
+    colored_mask = (page_rgb[:uy, :, 2] > 180) & (page_rgb[:uy, :, 0] < 60)
+    assert np.count_nonzero(colored_mask) > 0
+    colored_diff = np.max(np.abs(out_rgb[:uy, :][colored_mask].astype(int) - page_rgb[:uy, :][colored_mask].astype(int)))
+    assert colored_diff <= 1, f"Protected colored content pixels altered by {colored_diff} gray levels"
+
+    # Legitimate thin footer rule pixels
+    rule_y = int(round(0.956 * height))
+    rule_mask = np.mean(page_rgb[rule_y, :], axis=1) < 150
+    assert np.count_nonzero(rule_mask) > 0
+    rule_diff = np.max(np.abs(out_rgb[rule_y, :][rule_mask].astype(int) - page_rgb[rule_y, :][rule_mask].astype(int)))
+    assert rule_diff <= 1, f"Protected footer rule pixels altered by {rule_diff} gray levels"
+
+
+def test_raster_tailieuonthi_e2e_propagates_worker_count(tmp_path: Path, monkeypatch) -> None:
+    import backend.engine.pipeline_v2.execute as exec_mod
+    monkeypatch.setattr(exec_mod, "auto_worker_count", lambda req, count, dpi: 2)
+
+    source = tmp_path / "raster_multi.pdf"
+    output = tmp_path / "raster_multi_clean.pdf"
+
+    height, width = 800, 600
+    doc = fitz.open()
+    for _ in range(2):
+        page_rgb = np.full((height, width, 3), (252, 250, 246), dtype=np.uint8)
+        cv2.putText(
+            page_rgb,
+            "https://TaiLieuOnThi.Net",
+            (int(round(0.20 * width)), int(round(0.985 * height))),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (140, 140, 140),
+            2,
+            cv2.LINE_AA,
+        )
+        bio = BytesIO()
+        Image.fromarray(page_rgb).save(bio, format="PNG")
+        p = doc.new_page(width=width, height=height)
+        p.insert_image(p.rect, stream=bio.getvalue())
+        p.insert_link({
+            "kind": fitz.LINK_URI,
+            "from": fitz.Rect(int(round(0.20 * width)), int(round(0.965 * height)), int(round(0.80 * width)), int(round(0.995 * height))),
+            "uri": "https://TaiLieuOnThi.Net",
+        })
+    doc.save(source)
+    doc.close()
+
+    result = process_document_v2(
+        source,
+        output,
+        options={
+            "content_profile": "auto",
+            "footer_cleanup": "auto",
+            "allow_legacy_fallback": False,
+            "workers": 2,
+            "qc_dpi": 72,
+        },
+    )
+
+    assert result.report.worker_count == 2
+    assert result.report.strategy == StrategyKind.RASTER_TEMPLATE.value
+    assert result.report.metadata.get("repair_engine") == "tdm_guided"
+    assert result.qc.ok is True
+    with fitz.open(output) as out_doc:
+        assert out_doc.page_count == 2
+

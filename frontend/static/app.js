@@ -3,7 +3,9 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 let selectedLocalFiles = [];
 let selectedMode = 'auto';
+let selectedEnginePreference = 'auto_smart';
 let selectedContentProfile = 'auto';
+let selectedFooterCleanup = 'auto';
 let selectedPreset = 'balanced';
 let currentJobId = null;
 let eventCursor = 0;
@@ -102,20 +104,38 @@ function formatConfidence(value) {
   return `${Math.round(Math.max(0, Math.min(1, numeric)) * 100)}%`;
 }
 
+function formatFooterCleanup(value) {
+  if (value == null || value === '') return '—';
+  const val = String(value).toLowerCase();
+  if (val === 'standard') return 'Standard';
+  if (val === 'deep') return 'Deep';
+  return String(value);
+}
+
+function formatFooterResidual(value) {
+  if (value == null || value === '') return '—';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '—';
+  return `${(numeric * 100).toFixed(1)}%`;
+}
+
 function renderDiagnostics(payload = {}) {
   const report = payload.report || {};
-  const metadata = report.metadata || {};
+  const metadata = report.metadata || payload.metadata || {};
+  const qcV2 = payload.qc_v2 || payload.summary || payload.qc || {};
   const kind = payload.document_kind || metadata.document_kind;
   const kindLabels = { vector: 'Vector', hybrid: 'Hybrid', raster: 'Raster', unknown: 'Chưa rõ' };
   const strategy = payload.strategy || report.strategy;
   const strategyLabels = {
-    stream_remove: 'Stream remove',
-    vector_remove: 'Vector remove',
-    raster_template: 'Raster template',
-    legacy: 'Legacy fallback',
+    stream_remove: 'Stream Clean',
+    vector_remove: 'Vector Repair',
+    raster_template: 'Raster Clean',
+    legacy: 'Compatibility Clean',
   };
   const confidence = payload.strategy_confidence ?? payload.confidence ?? report.confidence;
   const watermark = payload.watermark_family || payload.marker || metadata.watermark_family;
+  const footerCleanup = metadata.footer_cleanup_level ?? qcV2.footer_cleanup_level ?? payload.footer_cleanup_level;
+  const footerResidual = metadata.footer_residual_score ?? qcV2.footer_residual_score ?? payload.footer_residual_score;
 
   if (kind) setDiagnostic('#analysisRepresentation', kindLabels[String(kind).toLowerCase()] || kind);
   if (watermark) setDiagnostic('#analysisWatermark', watermark);
@@ -124,6 +144,16 @@ function renderDiagnostics(payload = {}) {
   if (report.worker_count != null) setDiagnostic('#analysisWorkers', report.worker_count);
   if (report.native_image_pages != null) setDiagnostic('#analysisNativeImage', `${report.native_image_pages} trang`);
   if (report.ocr_calls != null) setDiagnostic('#analysisOcrCalls', `${report.ocr_calls} lần`);
+  if (footerCleanup != null) {
+    setDiagnostic('#analysisFooterCleanup', formatFooterCleanup(footerCleanup));
+  } else if (payload.report != null || payload.qc_v2 != null) {
+    setDiagnostic('#analysisFooterCleanup', '—');
+  }
+  if (footerResidual != null) {
+    setDiagnostic('#analysisFooterResidual', formatFooterResidual(footerResidual));
+  } else if (payload.report != null || payload.qc_v2 != null) {
+    setDiagnostic('#analysisFooterResidual', '—');
+  }
 }
 
 function renderQcReport(data) {
@@ -140,6 +170,8 @@ function resetRunUi() {
   setDiagnostic('#analysisWorkers', '—');
   setDiagnostic('#analysisNativeImage', '—');
   setDiagnostic('#analysisOcrCalls', '—');
+  setDiagnostic('#analysisFooterCleanup', '—');
+  setDiagnostic('#analysisFooterResidual', '—');
 }
 
 function setRunning(isRunning) {
@@ -262,17 +294,43 @@ function toggleOutputState() {
   updateStartActionUi();
 }
 
+const ENGINE_PREFERENCES = new Set(['auto_smart', 'stream_clean', 'raster_clean', 'compatibility_clean']);
 const CONTENT_PROFILES = new Set(['auto', 'math', 'physics', 'chemistry', 'ebook']);
+const FOOTER_CLEANUP_LEVELS = new Set(['auto', 'standard', 'deep']);
+
+function selectEnginePreference(engine) {
+  selectedEnginePreference = ENGINE_PREFERENCES.has(engine) ? engine : 'auto_smart';
+  $$('#enginePicker [data-engine]').forEach((card) => {
+    const isSelected = card.dataset.engine === selectedEnginePreference;
+    card.classList.toggle('selected', isSelected);
+    card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+  });
+}
 
 function selectContentProfile(profile) {
   selectedContentProfile = CONTENT_PROFILES.has(profile) ? profile : 'auto';
-  const select = $('#contentProfile');
-  if (select) select.value = selectedContentProfile;
+  $$('#contentProfilePicker [data-content-profile]').forEach((card) => {
+    const isSelected = card.dataset.contentProfile === selectedContentProfile;
+    card.classList.toggle('selected', isSelected);
+    card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+  });
+}
+
+function selectFooterCleanup(level) {
+  selectedFooterCleanup = FOOTER_CLEANUP_LEVELS.has(level) ? level : 'auto';
+  $$('#footerCleanup [data-footer-cleanup]').forEach((card) => {
+    const isSelected = card.dataset.footerCleanup === selectedFooterCleanup;
+    card.classList.toggle('selected', isSelected);
+    card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+  });
 }
 
 function selectPreset(preset, applyValues = true) {
   selectedPreset = presetValues[preset] ? preset : 'balanced';
-  $$('#presetPicker .preset-card').forEach((card) => card.classList.toggle('selected', card.dataset.preset === selectedPreset));
+  $$('#presetPicker .preset-card').forEach((card) => {
+    card.classList.toggle('selected', card.dataset.preset === selectedPreset);
+    card.setAttribute('aria-checked', card.dataset.preset === selectedPreset ? 'true' : 'false');
+  });
   const values = presetValues[selectedPreset];
   $('#presetHint').textContent = values?.hint || '';
   if (applyValues && values) {
@@ -286,7 +344,9 @@ function selectPreset(preset, applyValues = true) {
 function commonPayload() {
   return {
     mode: selectedMode,
+    engine_preference: selectedEnginePreference,
     content_profile: selectedContentProfile,
+    footer_cleanup: selectedFooterCleanup,
     preset: selectedPreset,
     same_folder: $('#sameFolder').checked,
     overwrite: $('#overwrite').checked,
@@ -457,7 +517,9 @@ async function loadConfig() {
   const cfg = configCache.config || {};
   const common = cfg.common || {};
   modeConfigCache = cfg.modes || {};
+  selectEnginePreference(common.engine_preference || 'auto_smart');
   selectContentProfile(common.content_profile || 'auto');
+  selectFooterCleanup(common.footer_cleanup || 'auto');
 
   const backendPresets = configCache.presets || {};
   for (const [name, values] of Object.entries(backendPresets)) {
@@ -503,7 +565,9 @@ function buildCommonSettingsPayload() {
     output_pdf_dpi: Number($('#outputDpiSetting').value || 240),
     jpeg_quality: Number($('#jpegQualitySetting').value || 92),
     quality_profile: selectedPreset,
+    engine_preference: selectedEnginePreference,
     content_profile: selectedContentProfile,
+    footer_cleanup: selectedFooterCleanup,
     output_grayscale: $('#outputGrayscale').checked,
     same_folder: $('#sameFolder').checked,
     overwrite: $('#overwrite').checked,
@@ -630,7 +694,9 @@ function initEvents() {
   $('#chooseOutputDir').addEventListener('click', chooseOutputDir);
   $('#saveOutputDefaults').addEventListener('click', saveOutputDefaults);
 
-  $('#contentProfile').addEventListener('change', () => selectContentProfile($('#contentProfile').value));
+  $$('#enginePicker [data-engine]').forEach((card) => card.addEventListener('click', () => selectEnginePreference(card.dataset.engine)));
+  $$('#contentProfilePicker [data-content-profile]').forEach((card) => card.addEventListener('click', () => selectContentProfile(card.dataset.contentProfile)));
+  $$('#footerCleanup [data-footer-cleanup]').forEach((card) => card.addEventListener('click', () => selectFooterCleanup(card.dataset.footerCleanup)));
   $$('#presetPicker .preset-card').forEach((card) => card.addEventListener('click', () => selectPreset(card.dataset.preset, true)));
 
   $('#startBtn').addEventListener('click', startProcessing);
@@ -652,7 +718,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   initTheme();
   initEvents();
+  selectEnginePreference('auto_smart');
   selectContentProfile('auto');
+  selectFooterCleanup('auto');
   resetRunUi();
   setOutputButtons(false);
   renderFileList();
