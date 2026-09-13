@@ -2,218 +2,240 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
-import subprocess
+import statistics
 import sys
 import time
 from typing import Any
 
 import fitz
-import psutil
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+PRESET_CONFIGS: dict[str, dict[str, Any]] = {
+    "fast": {"dpi": 200, "output_dpi": 200, "quality": 88, "workers": 0},
+    "balanced": {"dpi": 240, "output_dpi": 240, "quality": 92, "workers": 0},
+    "high_quality": {"dpi": 320, "output_dpi": 320, "quality": 95, "workers": 0},
+    "quality": {"dpi": 320, "output_dpi": 320, "quality": 95, "workers": 0},
+    "safe_mode": {"dpi": 240, "output_dpi": 240, "quality": 95, "workers": 1},
+    "safe": {"dpi": 240, "output_dpi": 240, "quality": 95, "workers": 1},
+}
 
-def _page_count(path: Path) -> int:
-    with fitz.open(str(path)) as doc:
-        return int(doc.page_count)
+
+def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, float]:
+    """Computes medians across repeated runs for numerical metrics.
+
+    Required medians:
+    - median_total_seconds
+    - median_pages_per_second
+    - median_analyze_seconds
+    - median_processing_seconds
+    - median_qc_seconds
+    """
+    if not runs:
+        return {}
+
+    summary: dict[str, float] = {}
+
+    total_seconds_list = [
+        float(r["total_seconds"]) for r in runs if r.get("total_seconds") is not None
+    ]
+    if total_seconds_list:
+        summary["median_total_seconds"] = float(statistics.median(total_seconds_list))
+
+    pps_list: list[float] = []
+    for r in runs:
+        if r.get("pages_per_second") is not None:
+            pps_list.append(float(r["pages_per_second"]))
+        elif r.get("pages") is not None and r.get("total_seconds") is not None:
+            tot = float(r["total_seconds"])
+            if tot > 0:
+                pps_list.append(float(r["pages"]) / tot)
+    if pps_list:
+        summary["median_pages_per_second"] = float(statistics.median(pps_list))
+
+    metric_keys = [
+        "analyze_seconds",
+        "processing_seconds",
+        "qc_seconds",
+        "output_size_bytes",
+        "footer_residual_score",
+        "watermark_residual_score",
+        "outside_change_ratio",
+    ]
+    for key in metric_keys:
+        vals = [float(r[key]) for r in runs if r.get(key) is not None]
+        if vals:
+            summary[f"median_{key}"] = float(statistics.median(vals))
+
+    return summary
 
 
-def _worker_v2(input_pdf: Path, output_pdf: Path, profile: str) -> dict[str, Any]:
+def run_single_benchmark(
+    input_path: Path | str,
+    output_path: Path | str,
+    preset: str = "balanced",
+    extra_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     from backend.app.processing_service import process_document_v2
 
-    result = process_document_v2(
-        input_pdf,
-        output_pdf,
-        options={
-            "content_profile": "auto",
-            "allow_legacy_fallback": False,
-            "workers": 0,
-            "qc_dpi": 96,
-            "max_outside_change_ratio": 0.08,
-            "max_watermark_residual_score": 0.08,
-        },
-    )
-    report = result.report.as_dict()
-    qc = result.qc.as_dict()
+    input_path = Path(input_path).expanduser().resolve()
+    output_path = Path(output_path).expanduser().resolve()
+
+    if input_path == output_path:
+        raise ValueError(f"Output path cannot be identical to source PDF: {input_path}")
+
+    preset_key = preset.strip().lower()
+    preset_cfg = PRESET_CONFIGS.get(preset_key, PRESET_CONFIGS["balanced"])
+
+    options: dict[str, Any] = {
+        "content_profile": "auto",
+        "engine_preference": "auto_smart",
+        "footer_cleanup": "auto",
+        "allow_legacy_fallback": True,
+        "dpi": int(preset_cfg["dpi"]),
+        "output_dpi": int(preset_cfg["output_dpi"]),
+        "quality": int(preset_cfg["quality"]),
+        "workers": int(preset_cfg["workers"]),
+        "qc_dpi": 96,
+        "max_outside_change_ratio": 0.08,
+        "max_watermark_residual_score": 0.08,
+    }
+    if extra_options:
+        options.update(extra_options)
+
+    with fitz.open(str(input_path)) as doc:
+        pages = int(doc.page_count)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
+
+    result = process_document_v2(input_path, output_path, options=options)
+
+    report = result.report
+    qc = result.qc
+
+    output_size_bytes = output_path.stat().st_size if output_path.exists() else 0
+    total_seconds = float(report.total_seconds)
+    pages_per_second = float(pages / total_seconds) if total_seconds > 0 else 0.0
+
     return {
-        "mode": "v2",
-        "profile": profile,
-        "strategy": report.get("strategy"),
-        "used_fallback": report.get("used_fallback"),
-        "analysis_seconds": report.get("analysis_seconds"),
-        "processing_seconds": report.get("processing_seconds"),
-        "qc_seconds": report.get("qc_seconds"),
-        "total_seconds": report.get("total_seconds"),
-        "worker_count": report.get("worker_count"),
-        "native_image_pages": report.get("native_image_pages"),
-        "rasterized_pages": report.get("rasterized_pages"),
-        "ocr_calls": report.get("ocr_calls"),
-        "watermark_residual_score": qc.get("watermark_residual_score"),
-        "outside_change_ratio": qc.get("outside_change_ratio"),
-        "changed_pixel_ratio": qc.get("changed_pixel_ratio"),
-        "qc_ok": qc.get("ok"),
-        "repair_engine": (report.get("metadata") or {}).get("repair_engine"),
+        "analyze_seconds": float(report.analysis_seconds),
+        "processing_seconds": float(report.processing_seconds),
+        "qc_seconds": float(report.qc_seconds),
+        "total_seconds": total_seconds,
+        "pages": pages,
+        "pages_per_second": pages_per_second,
+        "strategy": str(report.strategy),
+        "confidence": float(report.confidence),
+        "worker_count": int(report.worker_count),
+        "native_image_pages": int(report.native_image_pages),
+        "ocr_calls": int(report.ocr_calls),
+        "output_size_bytes": output_size_bytes,
+        "footer_residual_score": (
+            float(qc.footer_residual_score)
+            if qc.footer_residual_score is not None
+            else None
+        ),
+        "watermark_residual_score": (
+            float(qc.watermark_residual_score)
+            if qc.watermark_residual_score is not None
+            else None
+        ),
+        "outside_change_ratio": float(qc.outside_change_ratio),
+        "input": str(input_path),
+        "output": str(output_path),
+        "preset": preset,
+        "qc_ok": bool(qc.ok),
     }
 
 
-def _worker_legacy(input_pdf: Path, output_pdf: Path, profile: str) -> dict[str, Any]:
-    from backend.engine.router.models import ProcessingPlan, StrategyKind
-    from backend.engine.strategies.legacy import LegacyStrategy
+def run_benchmark(
+    pdf_paths: list[Path | str],
+    preset: str = "balanced",
+    repeat: int = 3,
+    output_dir: Path | str = ".benchmark-output",
+    extra_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out_dir = Path(output_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    plan = ProcessingPlan(
-        strategy=StrategyKind.LEGACY,
-        confidence=1.0,
-        content_profile=profile,
-        reason="Task 10 legacy benchmark",
-    )
-    started = time.perf_counter()
-    result = LegacyStrategy().execute(
-        input_pdf,
-        output_pdf,
-        plan,
-        workers=0,
-        dpi=240,
-        output_dpi=240,
-        quality=92,
-    )
-    elapsed = time.perf_counter() - started
-    return {
-        "mode": "legacy",
-        "profile": profile,
-        "strategy": "legacy",
-        "used_fallback": None,
-        "analysis_seconds": None,
-        "processing_seconds": elapsed,
-        "qc_seconds": None,
-        "total_seconds": elapsed,
-        "worker_count": None,
-        "native_image_pages": None,
-        "rasterized_pages": int(getattr(result, "rasterized_pages", 0)),
-        "ocr_calls": None,
-        "watermark_residual_score": None,
-        "outside_change_ratio": None,
-        "changed_pixel_ratio": None,
-        "qc_ok": None,
-        "repair_engine": "legacy_subject_adapter",
-    }
+    all_runs: list[dict[str, Any]] = []
+    files_data: dict[str, Any] = {}
 
+    for raw_path in pdf_paths:
+        pdf_path = Path(raw_path).expanduser().resolve()
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-def _run_worker(args: argparse.Namespace) -> int:
-    input_pdf = Path(args.input).expanduser().resolve()
-    output_pdf = Path(args.output).expanduser().resolve()
-    output_pdf.parent.mkdir(parents=True, exist_ok=True)
-    if output_pdf.exists():
-        output_pdf.unlink()
-    if args.worker_mode == "v2":
-        payload = _worker_v2(input_pdf, output_pdf, args.profile)
-    else:
-        payload = _worker_legacy(input_pdf, output_pdf, args.profile)
-    pages = _page_count(input_pdf)
-    payload.update(
-        {
-            "input": str(input_pdf),
-            "output": str(output_pdf),
-            "pages": pages,
-            "seconds_per_page": float(payload["total_seconds"]) / max(1, pages),
-            "input_bytes": input_pdf.stat().st_size,
-            "output_bytes": output_pdf.stat().st_size,
-            "output_size_ratio": output_pdf.stat().st_size / max(1, input_pdf.stat().st_size),
+        file_runs: list[dict[str, Any]] = []
+        for run_idx in range(1, repeat + 1):
+            run_output = out_dir / f"{pdf_path.stem}_{preset}_run{run_idx}.pdf"
+            print(f"Running [{run_idx}/{repeat}] for {pdf_path.name}...")
+            run_data = run_single_benchmark(
+                pdf_path, run_output, preset=preset, extra_options=extra_options
+            )
+            run_data["run_index"] = run_idx
+            file_runs.append(run_data)
+            all_runs.append(run_data)
+
+        files_data[str(pdf_path)] = {
+            "runs": file_runs,
+            "summary": summarize_runs(file_runs),
         }
-    )
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    return 0
 
-
-def _rss_tree_bytes(process: psutil.Process) -> int:
-    total = 0
-    procs = [process]
-    try:
-        procs.extend(process.children(recursive=True))
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-    for proc in procs:
-        try:
-            total += int(proc.memory_info().rss)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return total
-
-
-def _measure(mode: str, input_pdf: Path, output_pdf: Path, profile: str) -> dict[str, Any]:
-    env = os.environ.copy()
-    old_path = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(ROOT) + (os.pathsep + old_path if old_path else "")
-    cmd = [
-        sys.executable,
-        str(Path(__file__).resolve()),
-        "--worker-mode",
-        mode,
-        "--input",
-        str(input_pdf),
-        "--output",
-        str(output_pdf),
-        "--profile",
-        profile,
-    ]
-    started = time.perf_counter()
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(ROOT),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    ps_proc = psutil.Process(proc.pid)
-    peak = 0
-    while proc.poll() is None:
-        peak = max(peak, _rss_tree_bytes(ps_proc))
-        time.sleep(0.05)
-    peak = max(peak, _rss_tree_bytes(ps_proc))
-    stdout, stderr = proc.communicate()
-    wall = time.perf_counter() - started
-    if proc.returncode != 0:
-        raise RuntimeError(f"{mode} benchmark failed: {stderr[-3000:]}")
-    lines = [line for line in stdout.splitlines() if line.strip().startswith("{")]
-    if not lines:
-        raise RuntimeError(f"{mode} benchmark produced no JSON: {stdout[-2000:]}")
-    payload = json.loads(lines[-1])
-    payload["wall_seconds"] = wall
-    payload["peak_ram_bytes"] = peak
-    payload["peak_ram_mb"] = peak / (1024 * 1024)
-    return payload
+    overall_summary = summarize_runs(all_runs)
+    return {
+        "preset": preset,
+        "repeat": repeat,
+        "runs": all_runs,
+        "summary": overall_summary,
+        "files": files_data,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--worker-mode", choices=("v2", "legacy"))
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output")
-    parser.add_argument("--output-dir")
-    parser.add_argument("--profile", default="auto", choices=("auto", "math", "physics", "chemistry", "ebook"))
-    parser.add_argument("--label", default="case")
-    parser.add_argument("--json")
+    parser = argparse.ArgumentParser(description="V2 PDF Cleaner benchmark harness")
+    parser.add_argument("pdfs", nargs="+", help="Path(s) to PDF file(s) to benchmark")
+    parser.add_argument("--preset", default="balanced", help="Preset (default: balanced)")
+    parser.add_argument(
+        "--repeat", type=int, default=3, help="Number of repetitions per PDF (default: 3)"
+    )
+    parser.add_argument(
+        "--output-dir", default=None, help="Directory to save outputs and reports"
+    )
+    parser.add_argument("--json", default=None, help="Custom output path for JSON report")
     args = parser.parse_args(argv)
 
-    if args.worker_mode:
-        if not args.output:
-            parser.error("--output is required in worker mode")
-        return _run_worker(args)
-
-    input_pdf = Path(args.input).expanduser().resolve()
     output_dir = Path(args.output_dir or (ROOT / ".benchmark-output")).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    v2 = _measure("v2", input_pdf, output_dir / f"{args.label}-v2.pdf", args.profile)
-    legacy = _measure("legacy", input_pdf, output_dir / f"{args.label}-legacy.pdf", args.profile)
-    result = {"label": args.label, "input": str(input_pdf), "v2": v2, "legacy": legacy}
-    text = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
-    if args.json:
-        Path(args.json).write_text(text, encoding="utf-8")
-    print(text)
+
+    report_data = run_benchmark(
+        pdf_paths=args.pdfs,
+        preset=args.preset,
+        repeat=args.repeat,
+        output_dir=output_dir,
+    )
+
+    json_text = json.dumps(report_data, ensure_ascii=False, indent=2)
+    report_file = (
+        Path(args.json).expanduser().resolve()
+        if args.json
+        else (output_dir / "benchmark_report.json")
+    )
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(json_text, encoding="utf-8")
+
+    # Also save preset-specific name if using default report filename
+    if not args.json:
+        preset_file = output_dir / f"benchmark_{args.preset}.json"
+        preset_file.write_text(json_text, encoding="utf-8")
+
+    print(f"\nBenchmark completed. Report written to {report_file}")
+    print(f"Overall summary: {json.dumps(report_data['summary'], indent=2)}")
     return 0
 
 
