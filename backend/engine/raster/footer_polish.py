@@ -359,16 +359,10 @@ def polish_footer_residual(
     )
 
     if config.level == "auto":
-        # If clean initially, do not modify the image
-        if score_before <= config.residual_threshold:
-            return arr.copy(), FooterPolishMetrics(
-                level_used="standard",
-                changed_pixels=0,
-                residual_score_before=score_before,
-                residual_score_after=score_before,
-                protected_change_ratio=0.0,
-            )
-
+        # Always run the conservative standard pass. A footer ghost can occupy
+        # only a tiny fraction of the ROI and therefore have a low aggregate
+        # residual score while still being clearly visible. _apply_polish() is
+        # already a no-op when no eligible residue candidates are present.
         # 1. Run Standard first
         std_out, std_guard = _apply_polish(
             arr,
