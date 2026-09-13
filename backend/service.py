@@ -71,6 +71,19 @@ DOCUMENT_TYPES = {
     "ebook": "Ebook",
 }
 
+ENGINE_PREFERENCES = {
+    "auto_smart",
+    "stream_clean",
+    "raster_clean",
+    "compatibility_clean",
+}
+
+FOOTER_CLEANUPS = {
+    "auto",
+    "standard",
+    "deep",
+}
+
 def _build_preset_aliases() -> dict[str, dict[str, int]]:
     aliases: dict[str, dict[str, int]] = {}
     for name, values in QUALITY_PRESETS.items():
@@ -811,6 +824,8 @@ def _process_job_auto(job_id: str, params: dict[str, Any]) -> None:
                 output_path,
                 options={
                     "content_profile": str(params.get("content_profile") or "auto"),
+                    "engine_preference": str(params.get("engine_preference") or "auto_smart"),
+                    "footer_cleanup": str(params.get("footer_cleanup") or "auto"),
                     "workers": int(run_config["cpu"]),
                     "dpi": int(run_config["dpi"]),
                     "output_dpi": int(run_config["output_dpi"]),
@@ -997,6 +1012,14 @@ def start_process_local(payload: dict[str, Any]) -> dict[str, Any]:
     if not pdf_paths:
         raise ValueError("Hãy chọn ít nhất một file PDF.")
 
+    engine_preference = str(payload.get("engine_preference") or "auto_smart").strip().lower()
+    if engine_preference not in ENGINE_PREFERENCES:
+        raise ValueError(f"Giá trị engine_preference không hợp lệ: {engine_preference}")
+
+    footer_cleanup = str(payload.get("footer_cleanup") or "auto").strip().lower()
+    if footer_cleanup not in FOOTER_CLEANUPS:
+        raise ValueError(f"Giá trị footer_cleanup không hợp lệ: {footer_cleanup}")
+
     _prune_jobs()
     job_id = uuid.uuid4().hex[:12]
     output_root = OUTPUT_DIR / job_id
@@ -1005,6 +1028,8 @@ def start_process_local(payload: dict[str, Any]) -> dict[str, Any]:
     params = {
         "mode": str(payload.get("mode") or "auto"),
         "content_profile": str(payload.get("content_profile") or "auto"),
+        "engine_preference": engine_preference,
+        "footer_cleanup": footer_cleanup,
         "preset": str(payload.get("preset") or "balanced"),
         "same_folder": _parse_bool_value(payload.get("same_folder"), True),
         "overwrite": _parse_bool_value(payload.get("overwrite"), False),

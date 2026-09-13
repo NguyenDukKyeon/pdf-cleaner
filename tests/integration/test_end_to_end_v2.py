@@ -101,9 +101,33 @@ def test_vector_e2e_routes_to_stream_remove_and_qc_ignores_target_region(tmp_pat
     assert result.qc.ok is True
     assert result.qc.outside_change_ratio <= 0.001
     assert result.report.metadata.get("watermark_regions")
+    assert result.report.metadata.get("requested_engine") == "auto_smart"
     text = _all_text(output)
     assert WATERMARK not in text
     assert "Question 1: source content ABCD" in text
+
+
+def test_compatibility_clean_e2e_routes_to_legacy(tmp_path: Path) -> None:
+    source = tmp_path / "vector.pdf"
+    output = tmp_path / "vector-clean.pdf"
+    _make_vector_pdf(source)
+
+    result = process_document_v2(
+        source,
+        output,
+        options={
+            "content_profile": "auto",
+            "engine_preference": "compatibility_clean",
+            "allow_legacy_fallback": False,
+            "qc_dpi": 72,
+            "max_outside_change_ratio": 0.20,
+        },
+    )
+
+    assert result.plan.strategy is StrategyKind.LEGACY
+    assert result.report.strategy == StrategyKind.LEGACY.value
+    assert result.report.metadata.get("requested_engine") == "compatibility_clean"
+    assert result.qc.ok is True
 
 
 def test_hybrid_e2e_routes_to_stream_remove_and_preserves_native_page_image(tmp_path: Path) -> None:

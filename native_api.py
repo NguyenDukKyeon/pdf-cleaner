@@ -102,6 +102,8 @@ class NativeApi:
         normalized = dict(payload or {})
         normalized.setdefault("mode", "auto")
         normalized.setdefault("content_profile", "auto")
+        normalized.setdefault("engine_preference", "auto_smart")
+        normalized.setdefault("footer_cleanup", "auto")
         return self._safe(lambda: self._service().start_process_local(normalized))
 
     def poll_job(self, job_id: str, after_event_id: int = 0) -> dict[str, Any]:
