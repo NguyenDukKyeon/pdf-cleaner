@@ -132,7 +132,7 @@ def _profile_from_evidence(
 
     if kind is DocumentKind.RASTER and full_page_image_ratio >= 0.8:
         if not any(item.marker == "tailieuonthi" for item in candidates):
-            probe_key = (sampled_pages[0],) if len(sampled_pages) == 1 else (sampled_pages[0], sampled_pages[-1])
+            probe_key = tuple(sampled_pages)
             if probe_cache is not None and probe_key in probe_cache:
                 probe_confidence, probe_pages = probe_cache[probe_key]
             else:
@@ -229,4 +229,3 @@ def analyze_document(
         return profile  # type: ignore[return-value]
     finally:
         doc.close()
-
