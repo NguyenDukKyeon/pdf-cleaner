@@ -1,4 +1,5 @@
 from __future__ import annotations
+import inspect
 import os
 from pathlib import Path
 import time
@@ -13,7 +14,6 @@ from backend.engine.strategies.stream_remove import StreamRemoveStrategy
 ENGINE_DIR = Path(__file__).resolve().parents[1]
 if str(ENGINE_DIR) not in sys.path:
     sys.path.insert(0, str(ENGINE_DIR))
-import inspect
 from tdm_cleaner.core.worker_pool import auto_worker_count
 from .report import ProcessingReport
 

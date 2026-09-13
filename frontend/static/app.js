@@ -327,7 +327,10 @@ function selectFooterCleanup(level) {
 
 function selectPreset(preset, applyValues = true) {
   selectedPreset = presetValues[preset] ? preset : 'balanced';
-  $$('#presetPicker .preset-card').forEach((card) => card.classList.toggle('selected', card.dataset.preset === selectedPreset));
+  $$('#presetPicker .preset-card').forEach((card) => {
+    card.classList.toggle('selected', card.dataset.preset === selectedPreset);
+    card.setAttribute('aria-checked', card.dataset.preset === selectedPreset ? 'true' : 'false');
+  });
   const values = presetValues[selectedPreset];
   $('#presetHint').textContent = values?.hint || '';
   if (applyValues && values) {

@@ -21,8 +21,8 @@ from PIL import Image
 from .footer_polish import (
     FooterPolishConfig,
     FooterPolishMetrics,
-    _ratio_box_to_pixels,
     polish_footer_residual,
+    ratio_box_to_pixels,
 )
 from .image_extractor import extract_native_page_image
 
@@ -232,7 +232,7 @@ def _clean_native_page(
     output_rgb = polished_rgb
 
     native_mask = cv2.resize(trusted.astype(np.uint8), (native_rgb.shape[1], native_rgb.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
-    rx0, ry0, rx1, ry1 = _ratio_box_to_pixels(footer_cfg.footer_url_box, native_rgb.shape[1], native_rgb.shape[0])
+    rx0, ry0, rx1, ry1 = ratio_box_to_pixels(footer_cfg.footer_url_box, native_rgb.shape[1], native_rgb.shape[0])
     if rx1 > rx0 and ry1 > ry0:
         native_mask[ry0:ry1, rx0:rx1] = True
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import replace
 
 from backend.engine.analyzer.models import DocumentKind, DocumentProfile, WatermarkCandidate
@@ -91,5 +93,3 @@ def build_processing_plan(
             operations=(),
             requested_engine=preference.value,
         )
-
-    raise ValueError(f"unknown engine preference: {engine_preference}")

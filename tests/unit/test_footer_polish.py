@@ -281,3 +281,50 @@ def test_invalid_inputs_and_edge_cases():
     assert m.residual_score_before == 0.0
     assert m.residual_score_after == 0.0
 
+
+def test_tiny_narrow_rois_do_not_crash():
+    """Verify tiny/narrow ROIs (e.g. roi_w = 20, roi_h = 4) do not crash score or polish."""
+    img = np.full((100, 100, 3), (250, 250, 250), dtype=np.uint8)
+    # Add dark residual pixels inside lower strip to exercise detection and polish
+    img[96:100, 10:30] = (150, 150, 150)
+
+    # 1. Narrow ROI (w=20, h=4) with standard and deep cleanup
+    for level in ("standard", "deep", "auto"):
+        cfg_narrow = FooterPolishConfig(
+            footer_url_box=(0.10, 0.96, 0.30, 1.00),
+            upper_content_guard_y=0.90,
+            level=level,  # type: ignore
+        )
+        score = score_footer_residual(img, config=cfg_narrow)
+        assert isinstance(score, float)
+        assert score >= 0.0
+
+        polished, metrics = polish_footer_residual(img, config=cfg_narrow)
+        assert polished.shape == img.shape
+        assert isinstance(metrics, FooterPolishMetrics)
+
+    # 2. Sub-3px ROI (w=2, h=2) exercising blur bypass
+    img_sub3 = np.full((100, 100, 3), (250, 250, 250), dtype=np.uint8)
+    img_sub3[98:100, 10:12] = (150, 150, 150)
+    cfg_sub3 = FooterPolishConfig(
+        footer_url_box=(0.10, 0.98, 0.12, 1.00),
+        upper_content_guard_y=0.90,
+        level="deep",
+    )
+    score_sub3 = score_footer_residual(img_sub3, config=cfg_sub3)
+    assert isinstance(score_sub3, float)
+    polished_sub3, metrics_sub3 = polish_footer_residual(img_sub3, config=cfg_sub3)
+    assert polished_sub3.shape == img_sub3.shape
+    assert isinstance(metrics_sub3, FooterPolishMetrics)
+
+
+def test_ratio_box_to_pixels_public_and_compatibility():
+    """Verify ratio_box_to_pixels is exposed publicly and backward compatible with alias."""
+    from backend.engine.raster.footer_polish import ratio_box_to_pixels, _ratio_box_to_pixels
+
+    box = (0.1, 0.2, 0.5, 0.6)
+    px = ratio_box_to_pixels(box, 1000, 800)
+    assert px == _ratio_box_to_pixels(box, 1000, 800)
+    assert px == (100, 160, 500, 480)
+
+

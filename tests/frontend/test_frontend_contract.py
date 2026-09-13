@@ -136,3 +136,14 @@ def test_footer_diagnostics_rendering_contract() -> None:
     assert "footer_cleanup_level" in JS
     assert "footer_residual_score" in JS
 
+
+def test_preset_picker_and_accessibility_contract() -> None:
+    assert 'id="presetPicker"' in HTML
+    for preset in ("fast", "balanced", "high_quality", "safe_mode"):
+        assert f'data-preset="{preset}"' in HTML
+
+    # Verify selectPreset updates aria-checked for accessibility
+    assert "function selectPreset(preset, applyValues = true)" in JS
+    assert "card.setAttribute('aria-checked', card.dataset.preset === selectedPreset ? 'true' : 'false')" in JS
+
+

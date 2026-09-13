@@ -27,7 +27,7 @@ class FooterPolishMetrics:
     protected_change_ratio: float
 
 
-def _ratio_box_to_pixels(
+def ratio_box_to_pixels(
     box: tuple[float, float, float, float],
     width: int,
     height: int,
@@ -40,6 +40,9 @@ def _ratio_box_to_pixels(
     if x1 <= x0 or y1 <= y0:
         return 0, 0, 0, 0
     return x0, y0, x1, y1
+
+
+_ratio_box_to_pixels = ratio_box_to_pixels
 
 
 def _build_external_guards(
@@ -56,7 +59,7 @@ def _build_external_guards(
     guard[:uy, :] = True
 
     # 2. Page number guard
-    px0, py0, px1, py1 = _ratio_box_to_pixels(config.page_number_guard, width, height)
+    px0, py0, px1, py1 = ratio_box_to_pixels(config.page_number_guard, width, height)
     if px1 > px0 and py1 > py0:
         guard[py0:py1, px0:px1] = True
 
@@ -82,6 +85,14 @@ def _detect_roi_elements(
         (roi_guard, local_bg_rgb, local_bg_gray, paper_level)
     """
     roi_h, roi_w = roi_rgb.shape[:2]
+    if roi_h == 0 or roi_w == 0:
+        return (
+            np.zeros((roi_h, roi_w), dtype=bool),
+            roi_rgb.astype(np.float32),
+            np.zeros((roi_h, roi_w), dtype=np.float32),
+            255.0,
+        )
+
     roi_gray = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
     sat_roi = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2HSV)[..., 1]
 
@@ -98,14 +109,17 @@ def _detect_roi_elements(
 
     # Legitimate thin horizontal rule detection:
     # A legitimate rule is a continuous horizontal stroke across a significant span
-    dark_pixels = (roi_gray < paper_level - 25) & (sat_roi <= 35) & unprotected_ext
-    rule_klen = max(35, int(round(roi_w * 0.10)))
-    rule_open = cv2.morphologyEx(
-        dark_pixels.astype(np.uint8),
-        cv2.MORPH_OPEN,
-        np.ones((1, rule_klen), dtype=np.uint8),
-    )
-    rule_guard = cv2.dilate(rule_open, np.ones((3, 3), dtype=np.uint8), iterations=1) > 0
+    if roi_w < 35:
+        rule_guard = np.zeros((roi_h, roi_w), dtype=bool)
+    else:
+        dark_pixels = (roi_gray < paper_level - 25) & (sat_roi <= 35) & unprotected_ext
+        rule_klen = max(35, int(round(roi_w * 0.10)))
+        rule_open = cv2.morphologyEx(
+            dark_pixels.astype(np.uint8),
+            cv2.MORPH_OPEN,
+            np.ones((1, rule_klen), dtype=np.uint8),
+        )
+        rule_guard = cv2.dilate(rule_open, np.ones((3, 3), dtype=np.uint8), iterations=1) > 0
 
     # Colored content guard (saturation check + 1px edge dilation)
     raw_color = (sat_roi > 30) & unprotected_ext
@@ -133,11 +147,19 @@ def _detect_roi_elements(
     bg_work[non_paper] = paper_rgb
 
     # Smooth local paper background estimate
-    kx = min(roi_w - (1 - roi_w % 2), 51)
-    ky = min(roi_h - (1 - roi_h % 2), 25)
-    kx = max(5, kx)
-    ky = max(5, ky)
-    local_bg_rgb = cv2.GaussianBlur(bg_work, (kx, ky), 0)
+    if roi_w < 3 or roi_h < 3:
+        local_bg_rgb = bg_work
+    else:
+        kx = min(roi_w - (1 - roi_w % 2), 51)
+        ky = min(roi_h - (1 - roi_h % 2), 25)
+        kx = max(1, min(roi_w, kx))
+        if kx % 2 == 0:
+            kx = max(1, kx - 1)
+        ky = max(1, min(roi_h, ky))
+        if ky % 2 == 0:
+            ky = max(1, ky - 1)
+        local_bg_rgb = cv2.GaussianBlur(bg_work, (kx, ky), 0)
+
     local_bg_gray = cv2.cvtColor(
         np.clip(local_bg_rgb, 0, 255).astype(np.uint8),
         cv2.COLOR_RGB2GRAY,
@@ -201,7 +223,7 @@ def score_footer_residual(
         raise ValueError("rgb must be an RGB image with shape (H, W, 3)")
 
     height, width = arr.shape[:2]
-    rx0, ry0, rx1, ry1 = _ratio_box_to_pixels(config.footer_url_box, width, height)
+    rx0, ry0, rx1, ry1 = ratio_box_to_pixels(config.footer_url_box, width, height)
     roi_pixel_count = (rx1 - rx0) * (ry1 - ry0)
     if roi_pixel_count <= 0:
         return 0.0
@@ -241,7 +263,7 @@ def _apply_polish(
         (polished_rgb, full_page_guard_mask)
     """
     height, width = native_rgb.shape[:2]
-    rx0, ry0, rx1, ry1 = _ratio_box_to_pixels(config.footer_url_box, width, height)
+    rx0, ry0, rx1, ry1 = ratio_box_to_pixels(config.footer_url_box, width, height)
     if rx1 <= rx0 or ry1 <= ry0:
         return native_rgb.copy(), external_guards.copy()
 
@@ -299,7 +321,7 @@ def _compute_protected_change_ratio(
 ) -> float:
     """Compute (changed protected pixels) / (total protected pixels in ROI or 1)."""
     height, width = native_rgb.shape[:2]
-    rx0, ry0, rx1, ry1 = _ratio_box_to_pixels(config.footer_url_box, width, height)
+    rx0, ry0, rx1, ry1 = ratio_box_to_pixels(config.footer_url_box, width, height)
 
     roi_mask = np.zeros((height, width), dtype=bool)
     if rx1 > rx0 and ry1 > ry0:
