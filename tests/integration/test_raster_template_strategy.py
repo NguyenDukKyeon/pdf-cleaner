@@ -152,3 +152,41 @@ def test_raster_template_strategy_does_not_explode_output_size(tmp_path):
     plan = ProcessingPlan(StrategyKind.RASTER_TEMPLATE, .9, (ProcessingOperation('learn_and_apply_raster_template', 'tailieuonthi'),), True)
     RasterTemplateStrategy().execute(src, out, plan)
     assert out.stat().st_size <= src.stat().st_size * 4
+
+
+def test_raster_template_strategy_forwards_workers_to_clean_tailieuonthi_document(tmp_path, monkeypatch):
+    import shutil
+    import backend.engine.strategies.raster_template as raster_module
+    from backend.engine.raster.tdm_guided import TdmGuidedResult
+
+    src = tmp_path / 'src.pdf'; out = tmp_path / 'out.pdf'; _make_pdf(src)
+    calls = []
+
+    def fake_guided(input_pdf, output_pdf, **kwargs):
+        calls.append((Path(input_pdf), Path(output_pdf), kwargs))
+        shutil.copyfile(input_pdf, output_pdf)
+        return TdmGuidedResult(
+            changed_pages=5,
+            changed_pixels=123,
+            native_image_pages=5,
+            watermark_residual_score=0.01,
+            outside_change_ratio=0.0,
+            work_dpi=200,
+            footer_cleanup_level="standard",
+            footer_residual_score=0.01,
+            footer_protected_change_ratio=0.0,
+            page_footer_residual_scores=(0.01,),
+        )
+
+    monkeypatch.setattr(raster_module, 'clean_tailieuonthi_document', fake_guided)
+    plan = ProcessingPlan(
+        StrategyKind.RASTER_TEMPLATE,
+        .95,
+        (ProcessingOperation('learn_and_apply_raster_template', 'tailieuonthi'),),
+        True,
+    )
+
+    result = RasterTemplateStrategy().execute(src, out, plan, workers=4)
+
+    assert len(calls) == 1
+    assert calls[0][2].get("workers") == 4

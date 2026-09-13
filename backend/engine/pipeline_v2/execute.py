@@ -42,6 +42,12 @@ def execute_plan(input_path: str | Path, output_path: str | Path, plan: Processi
         try:
             kwargs = {'log':log,'progress':progress,'should_cancel':should_cancel}
             if isinstance(chosen, LegacyStrategy): kwargs.update(workers=workers,dpi=dpi,output_dpi=output_dpi,quality=quality)
+            elif isinstance(chosen, RasterTemplateStrategy): kwargs.update(workers=workers)
+            try:
+                if 'workers' in inspect.signature(chosen.execute).parameters and 'workers' not in kwargs:
+                    kwargs['workers'] = workers
+            except Exception:
+                pass
             try:
                 if 'footer_cleanup' in inspect.signature(chosen.execute).parameters:
                     kwargs['footer_cleanup'] = footer_cleanup
@@ -54,6 +60,12 @@ def execute_plan(input_path: str | Path, output_path: str | Path, plan: Processi
             used_fallback = True; fallback_reason = str(exc); active_name = StrategyKind.LEGACY.value
             fallback = legacy_strategy or LegacyStrategy(); kwargs = {'log':log,'progress':progress,'should_cancel':should_cancel}
             if isinstance(fallback, LegacyStrategy): kwargs.update(workers=workers,dpi=dpi,output_dpi=output_dpi,quality=quality)
+            elif isinstance(fallback, RasterTemplateStrategy): kwargs.update(workers=workers)
+            try:
+                if 'workers' in inspect.signature(fallback.execute).parameters and 'workers' not in kwargs:
+                    kwargs['workers'] = workers
+            except Exception:
+                pass
             try:
                 if 'footer_cleanup' in inspect.signature(fallback.execute).parameters:
                     kwargs['footer_cleanup'] = footer_cleanup

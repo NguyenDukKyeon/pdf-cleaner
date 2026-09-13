@@ -266,3 +266,204 @@ def test_clean_native_page_calls_footer_polish_and_resizes_protect_mask(tmp_path
     assert metrics["footer_residual_score"] == 0.015
     assert metrics["footer_protected_change_ratio"] == 0.0002
 
+
+def _make_multi_page_raster_pdf(path, count=4):
+    import fitz
+    from io import BytesIO
+    from PIL import Image
+
+    doc = fitz.open()
+    for _ in range(count):
+        image = Image.new("RGB", (600, 800), "white")
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+        page = doc.new_page(width=600, height=800)
+        page.insert_image(page.rect, stream=buf.getvalue())
+        page.insert_link({"kind": fitz.LINK_URI, "from": fitz.Rect(10, 10, 200, 30), "uri": "https://TaiLieuOnThi.Net"})
+    doc.save(path)
+    doc.close()
+
+
+def test_clean_tailieuonthi_document_runs_concurrent_workers_and_preserves_page_order(tmp_path, monkeypatch):
+    import json
+    import threading
+    import time
+    import backend.engine.raster.tdm_guided as tdm_module
+    from backend.engine.raster.tdm_guided import clean_tailieuonthi_document
+    from PIL import Image
+
+    src = tmp_path / "four_pages.pdf"
+    out = tmp_path / "out.pdf"
+    _make_multi_page_raster_pdf(src, count=4)
+
+    active_workers = 0
+    max_active_workers = 0
+    lock = threading.Lock()
+    assembled_page_order = []
+
+    def fake_worker(input_pdf, page_index, output_png, result_json, *, work_dpi, footer_cleanup="auto", should_cancel=None):
+        nonlocal active_workers, max_active_workers
+        with lock:
+            active_workers += 1
+            if active_workers > max_active_workers:
+                max_active_workers = active_workers
+        try:
+            # Stagger page completion slightly so order of completion != page_index
+            sleep_time = 0.08 if page_index == 0 else 0.03
+            time.sleep(sleep_time)
+            output_png.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (600, 800), "white").save(output_png, format="PNG")
+            metrics = {
+                "changed_pixels": 10 + page_index,
+                "changed_pixel_ratio": 0.0001,
+                "outside_change_ratio": 0.0,
+                "watermark_residual_score": 0.02,
+                "width": 600,
+                "height": 800,
+                "work_dpi": work_dpi,
+                "footer_cleanup_level": "standard",
+                "footer_residual_score": 0.010,
+                "footer_protected_change_ratio": 0.0001,
+            }
+            result_json.parent.mkdir(parents=True, exist_ok=True)
+            result_json.write_text(json.dumps(metrics), encoding="utf-8")
+            return metrics
+        finally:
+            with lock:
+                active_workers -= 1
+
+    def fake_assemble(page_pngs, geometries, output_pdf, metadata):
+        for p in page_pngs:
+            assembled_page_order.append(int(p.stem.split("-")[1]))
+        output_pdf.write_bytes(b"%PDF-1.4 fake")
+
+    monkeypatch.setattr(tdm_module, "_run_page_worker", fake_worker)
+    monkeypatch.setattr(tdm_module, "_assemble_native_pdf", fake_assemble)
+
+    clean_tailieuonthi_document(src, out, workers=2)
+
+    assert max_active_workers == 2
+    assert assembled_page_order == [0, 1, 2, 3]
+
+
+def test_clean_tailieuonthi_document_workers_one_runs_serially(tmp_path, monkeypatch):
+    import json
+    import threading
+    import time
+    import backend.engine.raster.tdm_guided as tdm_module
+    from backend.engine.raster.tdm_guided import clean_tailieuonthi_document
+    from PIL import Image
+
+    src = tmp_path / "four_pages.pdf"
+    out = tmp_path / "out.pdf"
+    _make_multi_page_raster_pdf(src, count=4)
+
+    active_workers = 0
+    max_active_workers = 0
+    lock = threading.Lock()
+    assembled_page_order = []
+
+    def fake_worker(input_pdf, page_index, output_png, result_json, *, work_dpi, footer_cleanup="auto", should_cancel=None):
+        nonlocal active_workers, max_active_workers
+        with lock:
+            active_workers += 1
+            if active_workers > max_active_workers:
+                max_active_workers = active_workers
+        try:
+            time.sleep(0.02)
+            output_png.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (600, 800), "white").save(output_png, format="PNG")
+            metrics = {
+                "changed_pixels": 10,
+                "changed_pixel_ratio": 0.0001,
+                "outside_change_ratio": 0.0,
+                "watermark_residual_score": 0.02,
+                "width": 600,
+                "height": 800,
+                "work_dpi": work_dpi,
+                "footer_cleanup_level": "standard",
+                "footer_residual_score": 0.010,
+                "footer_protected_change_ratio": 0.0001,
+            }
+            result_json.parent.mkdir(parents=True, exist_ok=True)
+            result_json.write_text(json.dumps(metrics), encoding="utf-8")
+            return metrics
+        finally:
+            with lock:
+                active_workers -= 1
+
+    def fake_assemble(page_pngs, geometries, output_pdf, metadata):
+        for p in page_pngs:
+            assembled_page_order.append(int(p.stem.split("-")[1]))
+        output_pdf.write_bytes(b"%PDF-1.4 fake")
+
+    monkeypatch.setattr(tdm_module, "_run_page_worker", fake_worker)
+    monkeypatch.setattr(tdm_module, "_assemble_native_pdf", fake_assemble)
+
+    clean_tailieuonthi_document(src, out, workers=1)
+
+    assert max_active_workers == 1
+    assert assembled_page_order == [0, 1, 2, 3]
+
+
+def test_clean_tailieuonthi_document_cancellation_aborts_and_skips_assembly(tmp_path, monkeypatch):
+    import json
+    import time
+    import pytest
+    import backend.engine.raster.tdm_guided as tdm_module
+    from backend.engine.raster.tdm_guided import clean_tailieuonthi_document
+    from PIL import Image
+
+    src = tmp_path / "four_pages.pdf"
+    out = tmp_path / "out.pdf"
+    _make_multi_page_raster_pdf(src, count=4)
+
+    assemble_called = False
+
+    def fake_worker(input_pdf, page_index, output_png, result_json, *, work_dpi, footer_cleanup="auto", should_cancel=None):
+        time.sleep(0.05)
+        if should_cancel and should_cancel():
+            raise RuntimeError("cancelled")
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (600, 800), "white").save(output_png, format="PNG")
+        metrics = {
+            "changed_pixels": 10,
+            "changed_pixel_ratio": 0.0001,
+            "outside_change_ratio": 0.0,
+            "watermark_residual_score": 0.02,
+            "width": 600,
+            "height": 800,
+            "work_dpi": work_dpi,
+            "footer_cleanup_level": "standard",
+            "footer_residual_score": 0.010,
+            "footer_protected_change_ratio": 0.0001,
+        }
+        result_json.parent.mkdir(parents=True, exist_ok=True)
+        result_json.write_text(json.dumps(metrics), encoding="utf-8")
+        return metrics
+
+    def fake_assemble(page_pngs, geometries, output_pdf, metadata):
+        nonlocal assemble_called
+        assemble_called = True
+        output_pdf.write_bytes(b"%PDF-1.4 fake")
+
+    cancelled = False
+    def cancel_checker():
+        return cancelled
+
+    def triggering_cancel_worker(input_pdf, page_index, output_png, result_json, *, work_dpi, footer_cleanup="auto", should_cancel=None):
+        nonlocal cancelled
+        cancelled = True
+        if should_cancel and should_cancel():
+            raise RuntimeError("cancelled")
+        return fake_worker(input_pdf, page_index, output_png, result_json, work_dpi=work_dpi, footer_cleanup=footer_cleanup, should_cancel=should_cancel)
+
+    monkeypatch.setattr(tdm_module, "_run_page_worker", triggering_cancel_worker)
+    monkeypatch.setattr(tdm_module, "_assemble_native_pdf", fake_assemble)
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        clean_tailieuonthi_document(src, out, workers=2, should_cancel=cancel_checker)
+
+    assert assemble_called is False
+    assert not out.exists()
+

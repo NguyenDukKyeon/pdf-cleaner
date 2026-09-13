@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import importlib.util
 import io
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Callable, Mapping
 
@@ -389,6 +391,7 @@ def clean_tailieuonthi_document(
     input_pdf: str | Path,
     output_pdf: str | Path,
     *,
+    workers: int = 1,
     work_dpi: int = DEFAULT_WORK_DPI,
     footer_cleanup: str = "auto",
     log: Callable[[str], None] | None = None,
@@ -399,34 +402,100 @@ def clean_tailieuonthi_document(
     output_path = Path(output_pdf).expanduser().resolve()
     geometries, metadata = _validate_safe_raster_document(input_path)
     total = len(geometries)
-    changed_pixels = 0
-    changed_pages = 0
-    native_pages = 0
-    total_native_pixels = 0
-    outside_weighted = 0.0
-    residual_scores: list[float] = []
-    page_footer_scores: list[float] = []
-    page_protected_ratios: list[float] = []
-    page_cleanup_levels: list[str] = []
+    if total == 0:
+        return TdmGuidedResult(
+            changed_pages=0,
+            changed_pixels=0,
+            native_image_pages=0,
+            watermark_residual_score=0.0,
+            outside_change_ratio=0.0,
+            work_dpi=int(work_dpi),
+            changed_pixel_ratio=0.0,
+        )
+
+    if should_cancel and should_cancel():
+        raise RuntimeError("cancelled")
+
+    stop_event = threading.Event()
+
+    def combined_should_cancel() -> bool:
+        if stop_event.is_set():
+            return True
+        if should_cancel and should_cancel():
+            return True
+        return False
+
+    def process_page(index: int, temp_dir: Path) -> tuple[int, Path, dict[str, object]]:
+        if combined_should_cancel():
+            raise RuntimeError("cancelled")
+        page_png = temp_dir / f"page-{index:05d}.png"
+        result_json = temp_dir / f"page-{index:05d}.json"
+        metrics = _run_page_worker(
+            input_path,
+            index,
+            page_png,
+            result_json,
+            work_dpi=int(work_dpi),
+            footer_cleanup=str(footer_cleanup),
+            should_cancel=combined_should_cancel,
+        )
+        return index, page_png, metrics
+
+    results_by_index: dict[int, tuple[Path, dict[str, object]]] = {}
+    completed_count = 0
+    progress_lock = threading.Lock()
 
     with tempfile.TemporaryDirectory(prefix="pdfcleaner_tdm_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
-        page_pngs: list[Path] = []
-        for index in range(total):
-            if should_cancel and should_cancel():
-                raise RuntimeError("cancelled")
-            page_png = temp_dir / f"page-{index:05d}.png"
-            result_json = temp_dir / f"page-{index:05d}.json"
-            metrics = _run_page_worker(
-                input_path,
-                index,
-                page_png,
-                result_json,
-                work_dpi=int(work_dpi),
-                footer_cleanup=str(footer_cleanup),
-                should_cancel=should_cancel,
-            )
-            page_pngs.append(page_png)
+        workers_count = max(1, int(workers))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers_count) as pool:
+            futures = {
+                pool.submit(process_page, index, temp_dir): index
+                for index in range(total)
+            }
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    if combined_should_cancel():
+                        raise RuntimeError("cancelled")
+                    index, page_png, metrics = future.result()
+                    results_by_index[index] = (page_png, metrics)
+                    with progress_lock:
+                        completed_count += 1
+                        current_completed = completed_count
+                    if progress:
+                        progress(current_completed, total, "TDM-guided native watermark repair")
+                    if log:
+                        page_res = float(metrics.get("watermark_residual_score", 0.0) or 0.0)
+                        page_chg = int(metrics.get("changed_pixels", 0) or 0)
+                        page_foot_res = float(metrics.get("footer_residual_score", 0.0) or 0.0)
+                        log(
+                            f"TDM-guided page {index + 1}/{total}: residual={page_res:.4f} "
+                            f"changed={page_chg} footer_residual={page_foot_res:.4f}"
+                        )
+            except Exception:
+                stop_event.set()
+                for f in futures:
+                    f.cancel()
+                raise
+
+        if len(results_by_index) != total:
+            raise RuntimeError(f"TDM-guided processing incomplete: {len(results_by_index)}/{total} pages completed")
+
+        sorted_results = [results_by_index[i] for i in range(total)]
+        page_pngs = [res[0] for res in sorted_results]
+
+        changed_pixels = 0
+        changed_pages = 0
+        native_pages = 0
+        total_native_pixels = 0
+        outside_weighted = 0.0
+        residual_scores: list[float] = []
+        page_footer_scores: list[float] = []
+        page_protected_ratios: list[float] = []
+        page_cleanup_levels: list[str] = []
+
+        for index, (_, metrics) in enumerate(sorted_results):
             page_changed = int(metrics.get("changed_pixels", 0) or 0)
             pixels = max(1, int(metrics.get("width", 1)) * int(metrics.get("height", 1)))
             changed_pixels += page_changed
@@ -438,13 +507,6 @@ def clean_tailieuonthi_document(
             page_footer_scores.append(float(metrics.get("footer_residual_score", 0.0) or 0.0))
             page_protected_ratios.append(float(metrics.get("footer_protected_change_ratio", 0.0) or 0.0))
             page_cleanup_levels.append(str(metrics.get("footer_cleanup_level", "standard") or "standard"))
-            if progress:
-                progress(index + 1, total, "TDM-guided native watermark repair")
-            if log:
-                log(
-                    f"TDM-guided page {index + 1}/{total}: residual={residual_scores[-1]:.4f} "
-                    f"changed={page_changed} footer_residual={page_footer_scores[-1]:.4f}"
-                )
 
         _assemble_native_pdf(page_pngs, geometries, output_path, metadata)
 

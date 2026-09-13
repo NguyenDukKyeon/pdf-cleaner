@@ -25,6 +25,7 @@ class RasterTemplateStrategy:
         output_pdf: Path,
         plan: ProcessingPlan,
         *,
+        workers: int = 1,
         footer_cleanup: str = "auto",
         log: Callable[[str], None] | None = None,
         progress: Callable[[int, int, str], None] | None = None,
@@ -37,6 +38,7 @@ class RasterTemplateStrategy:
             guided = clean_tailieuonthi_document(
                 input_pdf,
                 output_pdf,
+                workers=workers,
                 footer_cleanup=footer_cleanup,
                 log=log,
                 progress=progress,

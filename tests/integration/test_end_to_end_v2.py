@@ -308,3 +308,56 @@ def test_raster_footer_e2e_cleans_residual_and_preserves_page_numbers_and_conten
     rule_diff = np.max(np.abs(out_rgb[rule_y, :][rule_mask].astype(int) - page_rgb[rule_y, :][rule_mask].astype(int)))
     assert rule_diff <= 1, f"Protected footer rule pixels altered by {rule_diff} gray levels"
 
+
+def test_raster_tailieuonthi_e2e_propagates_worker_count(tmp_path: Path, monkeypatch) -> None:
+    import backend.engine.pipeline_v2.execute as exec_mod
+    monkeypatch.setattr(exec_mod, "auto_worker_count", lambda req, count, dpi: 2)
+
+    source = tmp_path / "raster_multi.pdf"
+    output = tmp_path / "raster_multi_clean.pdf"
+
+    height, width = 800, 600
+    doc = fitz.open()
+    for _ in range(2):
+        page_rgb = np.full((height, width, 3), (252, 250, 246), dtype=np.uint8)
+        cv2.putText(
+            page_rgb,
+            "https://TaiLieuOnThi.Net",
+            (int(round(0.20 * width)), int(round(0.985 * height))),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (140, 140, 140),
+            2,
+            cv2.LINE_AA,
+        )
+        bio = BytesIO()
+        Image.fromarray(page_rgb).save(bio, format="PNG")
+        p = doc.new_page(width=width, height=height)
+        p.insert_image(p.rect, stream=bio.getvalue())
+        p.insert_link({
+            "kind": fitz.LINK_URI,
+            "from": fitz.Rect(int(round(0.20 * width)), int(round(0.965 * height)), int(round(0.80 * width)), int(round(0.995 * height))),
+            "uri": "https://TaiLieuOnThi.Net",
+        })
+    doc.save(source)
+    doc.close()
+
+    result = process_document_v2(
+        source,
+        output,
+        options={
+            "content_profile": "auto",
+            "footer_cleanup": "auto",
+            "allow_legacy_fallback": False,
+            "workers": 2,
+            "qc_dpi": 72,
+        },
+    )
+
+    assert result.report.worker_count == 2
+    assert result.report.strategy == StrategyKind.RASTER_TEMPLATE.value
+    assert result.report.metadata.get("repair_engine") == "tdm_guided"
+    assert result.qc.ok is True
+    with fitz.open(output) as out_doc:
+        assert out_doc.page_count == 2
+
