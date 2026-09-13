@@ -35,3 +35,38 @@ def test_raster_analyzer_adds_tailieuonthi_candidate_from_signature_probe(tmp_pa
     candidate = next(item for item in profile.watermark_candidates if item.marker == "tailieuonthi")
     assert candidate.confidence == 0.98
     assert "tdm_signature_probe" in candidate.evidence
+
+
+def test_raster_analyzer_staged_sampling_stops_early_on_high_confidence_probe(tmp_path, monkeypatch):
+    import backend.engine.analyzer.document_analyzer as analyzer_module
+
+    pdf = make_raster_pdf(tmp_path / "raster20.pdf", pages=20)
+    monkeypatch.setattr(
+        analyzer_module,
+        "probe_tailieuonthi_signature",
+        lambda doc, sampled_pages: (0.98, tuple(sampled_pages[:2])),
+        raising=False,
+    )
+
+    profile = analyze_document(pdf)
+    assert len(profile.sampled_pages) == 3
+    assert profile.kind is DocumentKind.RASTER
+    candidate = next(item for item in profile.watermark_candidates if item.marker == "tailieuonthi")
+    assert candidate.confidence >= 0.95
+
+
+def test_raster_analyzer_expands_when_probe_confidence_is_insufficient(tmp_path, monkeypatch):
+    import backend.engine.analyzer.document_analyzer as analyzer_module
+
+    pdf = make_raster_pdf(tmp_path / "raster_low20.pdf", pages=20)
+    monkeypatch.setattr(
+        analyzer_module,
+        "probe_tailieuonthi_signature",
+        lambda doc, sampled_pages: (0.85, tuple(sampled_pages[:2])),
+        raising=False,
+    )
+
+    profile = analyze_document(pdf)
+    assert len(profile.sampled_pages) == 8
+    assert profile.kind is DocumentKind.RASTER
+
