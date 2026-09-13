@@ -11,6 +11,13 @@ class StrategyKind(str, Enum):
     LEGACY = "legacy"
 
 
+class EnginePreference(str, Enum):
+    AUTO_SMART = "auto_smart"
+    STREAM_CLEAN = "stream_clean"
+    RASTER_CLEAN = "raster_clean"
+    COMPATIBILITY_CLEAN = "compatibility_clean"
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessingOperation:
     kind: str
@@ -25,6 +32,7 @@ class ProcessingPlan:
     requires_strict_qc: bool = True
     content_profile: str = "auto"
     reason: str = ""
+    requested_engine: str = EnginePreference.AUTO_SMART.value
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
