@@ -32,28 +32,47 @@ App chạy bằng **pywebview + Edge WebView2**, không dùng FastAPI, không m�
 
 Nếu `<tên>_clean.pdf` đã tồn tại và **không** bật ghi đè, app tự tạo `<tên>_clean_2.pdf`, `_3.pdf`... thay vì ghi đè kết quả cũ.
 
-## Auto chọn chiến lược như thế nào?
+## Engine xử lý & Chiến lược Auto Smart
 
 V2 không còn dùng môn học để chọn watermark engine. Router dựa trên cấu trúc thật của PDF và độ tin cậy:
 
-- **Structural / stream path:** loại watermark lặp lại ở content stream/object khi có thể cô lập an toàn, không rasterize toàn trang.
-- **Raster template path:** với PDF là ảnh toàn trang, ưu tiên lấy trực tiếp native image XObject, học watermark ở mức tài liệu rồi sửa tối thiểu các vùng tin cậy.
-- **TaiLieuOnThi-guided path:** watermark TaiLieuOnThi có bằng chứng đủ mạnh có thể dùng cleanup chuyên biệt trên ảnh native, sau đó QC kiểm tra residual và thay đổi ngoài vùng watermark.
-- **Legacy fallback:** nếu confidence thấp hoặc V2 gặp lỗi an toàn, app giữ các engine TDM/IPCLASS/TYHH/Ebook làm fallback tương thích.
+- **Auto Smart (Mặc định khuyến nghị):** Phân tích PDF tự động một lần và chọn cách xử lý nhanh, an toàn nhất cho từng tài liệu. Đây là lựa chọn tốt nhất cho hầu hết mọi trường hợp.
+- **Stream Clean:** Chuyên dụng cho PDF gốc dạng text/vector; loại bỏ watermark lặp lại trong content stream/XObject mà không rasterize toàn trang, giữ nguyên 100% độ sắc nét vector và chữ.
+- **Raster Clean:** Dành cho PDF scan/ảnh toàn trang; ưu tiên trích xuất trực tiếp native image XObject ở độ phân giải gốc, học mẫu watermark mức tài liệu và tái tạo nền tối thiểu.
+- **Compatibility Clean:** Dành cho PDF phức tạp hoặc khi các engine nhanh chưa đủ độ tin cậy cao, đảm bảo đường xử lý an toàn nhất.
+
+### Compatibility Gates & Fallback
+
+Khi người dùng chọn engine thủ công (ví dụ: ép `stream_clean` cho PDF thuần scan ảnh, hoặc `raster_clean` cho PDF thuần vector), hệ thống kiểm tra qua **Compatibility Gates**. Nếu tài liệu không đáp ứng điều kiện tiên quyết của engine đã chọn hoặc vi phạm an toàn, router tự động thông báo và chuyển hướng sang chiến lược tương thích an toàn (hoặc fallback legacy) thay vì làm hỏng tài liệu.
 
 OCR **không phải yêu cầu bắt buộc theo từng trang**. Thiết kế V2 chỉ cho phép OCR dạng lazy/optional ở ROI khi thật sự cần; các đường native/template hiện tại không cần full-document OCR.
 
-## Advanced: Content protection profile
+## Phân biệt: Engine preference vs Content protection profile
 
-Trong **Cài đặt nâng cao → Bảo vệ nội dung — Auto V2**, có các profile:
+Hai cài đặt này phục vụ hai mục đích hoàn toàn khác nhau trong kiến trúc V2:
 
-- Auto
-- Toán / biểu đồ
-- Vật lý
-- Hóa học
-- Ebook
+1. **Engine preference (Bước 3 trên giao diện chính):** Quyết định **loại engine xử lý** cấp tài liệu (`auto_smart`, `stream_clean`, `raster_clean`, `compatibility_clean`).
+2. **Content protection profile (Cài đặt nâng cao → Bảo vệ nội dung — Auto V2):** Cung cấp **gợi ý bảo vệ nội dung cho router**, giúp router tinh chỉnh các bộ lọc bảo vệ pixel/vector theo đặc thù tài liệu:
+   - **Auto:** Cân bằng tự động giữa xóa watermark và bảo toàn nội dung.
+   - **Formula & Diagram Safe (Toán / biểu đồ):** Ưu tiên giữ công thức, bảng biểu, đồ thị và đường kẻ mảnh.
+   - **Diagram & Line Safe (Vật lý):** Ưu tiên sơ đồ mạch, hình minh họa thí nghiệm và các nét vẽ.
+   - **Symbol & Structure Safe (Hóa học):** Bảo vệ ký hiệu nguyên tố, chỉ số nhỏ, liên kết và cấu trúc phân tử.
+   - **Text & Image Safe (Ebook):** Giữ khối chữ dài, ảnh chụp, bìa màu và bố cục sách.
 
-Đây chỉ là **gợi ý bảo vệ nội dung cho router**, không trực tiếp chọn watermark engine.
+*Lưu ý:* Profile bảo vệ nội dung **không** chọn watermark engine trực tiếp; nó chỉ cung cấp trọng số bảo vệ an toàn cho router.
+
+## Làm sạch chân trang (Footer Cleanup)
+
+Với các tài liệu có watermark URL chân trang (như TaiLieuOnThi), hệ thống trang bị công nghệ **Native Footer Polish** hoạt động trực tiếp ở độ phân giải ảnh gốc, loại bỏ triệt để vết mờ URL mà không tạo vệt trắng hình chữ nhật (white patch), không làm lộ tone seam hay quầng sáng viền:
+
+- **Auto (Mặc định):** Tự động đo điểm tương phản còn sót (residual score) ở chân trang. Bắt đầu bằng mức *Standard*; nếu vệt mờ vẫn vượt ngưỡng, app tự động leo thang lên *Deep*.
+- **Standard:** Mức làm sạch tiêu chuẩn cho vùng URL chân trang, giữ nguyên cấu trúc nền cục bộ.
+- **Deep:** Làm sạch chuyên sâu với ngưỡng tương phản nhạy hơn và vùng phủ rộng hơn cho các vệt mờ cứng đầu.
+
+**Vùng bảo vệ bất khả xâm phạm (Guards):**
+Cả hai mức *Standard* và *Deep* đều tuân thủ nghiêm ngặt các guard:
+- **Số trang (Page Number Guard):** Vùng số trang bên phải được bảo vệ tuyệt đối, không bao giờ bị lem hay mờ.
+- **Dòng thông tin giáo viên / Slogan (Color Guard & Rule Guard):** Các dòng chữ có màu (đỏ, xanh), slogan và đường phân cách ngang hợp lệ phía trên chân trang được giữ nguyên vẹn 100%.
 
 ## Tiến trình và báo cáo
 
