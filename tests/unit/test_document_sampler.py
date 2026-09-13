@@ -83,3 +83,26 @@ def test_staged_evidence_collection_early_stops_and_expands(tmp_path, monkeypatc
     assert len(profile_ambig.sampled_pages) == 8
     assert set(inspected_pages) == set(profile_ambig.sampled_pages)
 
+
+def test_raster_signature_probe_recomputes_when_staged_sample_expands(tmp_path, monkeypatch):
+    import backend.engine.analyzer.document_analyzer as analyzer_mod
+    from tests.fixtures_factory import make_raster_pdf
+
+    raster_pdf = make_raster_pdf(tmp_path / "raster_staged.pdf", pages=20)
+    probed_page_sets = []
+
+    def fake_probe(doc, sampled_pages):
+        pages = tuple(sampled_pages)
+        probed_page_sets.append(pages)
+        confidence = 0.70 if len(pages) == 3 else 0.95
+        return confidence, pages
+
+    monkeypatch.setattr(analyzer_mod, "probe_tailieuonthi_signature", fake_probe)
+
+    profile = analyze_document(raster_pdf)
+
+    assert [len(pages) for pages in probed_page_sets] == [3, 5]
+    assert len(profile.sampled_pages) == 5
+    best = max(profile.watermark_candidates, key=lambda item: item.confidence)
+    assert best.marker == "tailieuonthi"
+    assert best.confidence == pytest.approx(0.95)
