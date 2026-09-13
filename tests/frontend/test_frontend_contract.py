@@ -103,6 +103,8 @@ def test_v2_stage_progress_and_processing_diagnostics_are_rendered() -> None:
         "worker_count",
         "native_image_pages",
         "ocr_calls",
+        "footer_cleanup_level",
+        "footer_residual_score",
     ):
         assert field in JS
 
@@ -114,6 +116,8 @@ def test_v2_stage_progress_and_processing_diagnostics_are_rendered() -> None:
         "analysisWorkers",
         "analysisNativeImage",
         "analysisOcrCalls",
+        "analysisFooterCleanup",
+        "analysisFooterResidual",
     ):
         assert f'id="{element_id}"' in HTML
 
@@ -122,3 +126,13 @@ def test_v2_stage_progress_and_processing_diagnostics_are_rendered() -> None:
     assert ".engine-card" in CSS or ".engine-picker" in CSS
     assert ".protection-card" in CSS or ".protection-picker-grid" in CSS
     assert ".footer-cleanup-card" in CSS or ".footer-cleanup-picker" in CSS
+
+
+def test_footer_diagnostics_rendering_contract() -> None:
+    assert 'id="analysisFooterCleanup"' in HTML
+    assert 'id="analysisFooterResidual"' in HTML
+    assert "#analysisFooterCleanup" in JS
+    assert "#analysisFooterResidual" in JS
+    assert "footer_cleanup_level" in JS
+    assert "footer_residual_score" in JS
+

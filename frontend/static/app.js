@@ -104,9 +104,25 @@ function formatConfidence(value) {
   return `${Math.round(Math.max(0, Math.min(1, numeric)) * 100)}%`;
 }
 
+function formatFooterCleanup(value) {
+  if (value == null || value === '') return '—';
+  const val = String(value).toLowerCase();
+  if (val === 'standard') return 'Standard';
+  if (val === 'deep') return 'Deep';
+  return String(value);
+}
+
+function formatFooterResidual(value) {
+  if (value == null || value === '') return '—';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '—';
+  return `${(numeric * 100).toFixed(1)}%`;
+}
+
 function renderDiagnostics(payload = {}) {
   const report = payload.report || {};
-  const metadata = report.metadata || {};
+  const metadata = report.metadata || payload.metadata || {};
+  const qcV2 = payload.qc_v2 || payload.summary || payload.qc || {};
   const kind = payload.document_kind || metadata.document_kind;
   const kindLabels = { vector: 'Vector', hybrid: 'Hybrid', raster: 'Raster', unknown: 'Chưa rõ' };
   const strategy = payload.strategy || report.strategy;
@@ -118,6 +134,8 @@ function renderDiagnostics(payload = {}) {
   };
   const confidence = payload.strategy_confidence ?? payload.confidence ?? report.confidence;
   const watermark = payload.watermark_family || payload.marker || metadata.watermark_family;
+  const footerCleanup = metadata.footer_cleanup_level ?? qcV2.footer_cleanup_level ?? payload.footer_cleanup_level;
+  const footerResidual = metadata.footer_residual_score ?? qcV2.footer_residual_score ?? payload.footer_residual_score;
 
   if (kind) setDiagnostic('#analysisRepresentation', kindLabels[String(kind).toLowerCase()] || kind);
   if (watermark) setDiagnostic('#analysisWatermark', watermark);
@@ -126,6 +144,16 @@ function renderDiagnostics(payload = {}) {
   if (report.worker_count != null) setDiagnostic('#analysisWorkers', report.worker_count);
   if (report.native_image_pages != null) setDiagnostic('#analysisNativeImage', `${report.native_image_pages} trang`);
   if (report.ocr_calls != null) setDiagnostic('#analysisOcrCalls', `${report.ocr_calls} lần`);
+  if (footerCleanup != null) {
+    setDiagnostic('#analysisFooterCleanup', formatFooterCleanup(footerCleanup));
+  } else if (payload.report != null || payload.qc_v2 != null) {
+    setDiagnostic('#analysisFooterCleanup', '—');
+  }
+  if (footerResidual != null) {
+    setDiagnostic('#analysisFooterResidual', formatFooterResidual(footerResidual));
+  } else if (payload.report != null || payload.qc_v2 != null) {
+    setDiagnostic('#analysisFooterResidual', '—');
+  }
 }
 
 function renderQcReport(data) {
@@ -142,6 +170,8 @@ function resetRunUi() {
   setDiagnostic('#analysisWorkers', '—');
   setDiagnostic('#analysisNativeImage', '—');
   setDiagnostic('#analysisOcrCalls', '—');
+  setDiagnostic('#analysisFooterCleanup', '—');
+  setDiagnostic('#analysisFooterResidual', '—');
 }
 
 function setRunning(isRunning) {
