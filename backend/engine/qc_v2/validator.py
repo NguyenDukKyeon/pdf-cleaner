@@ -22,6 +22,13 @@ class QCReport:
     reasons: tuple[str, ...] = ()
     changed_pixel_ratio: float = 0.0
     watermark_residual_score: float | None = None
+    footer_residual_score: float | None = None
+    footer_cleanup_level: str | None = None
+    footer_protected_change_ratio: float | None = None
+
+    @property
+    def is_valid(self) -> bool:
+        return self.ok
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -78,6 +85,8 @@ def validate_output(
     *,
     max_outside_change_ratio: float = 0.08,
     max_watermark_residual_score: float = 0.08,
+    max_footer_residual_score: float = 0.035,
+    max_footer_protected_change_ratio: float = 0.002,
     pixel_change_threshold: int = 24,
     dpi: int = 96,
 ) -> QCReport:
@@ -86,6 +95,15 @@ def validate_output(
     reasons: list[str] = []
     failed_pages: list[int] = []
     metadata = dict(getattr(report, "metadata", {}) or {})
+
+    footer_cleanup_level = metadata.get("footer_cleanup_level")
+    if footer_cleanup_level is not None:
+        footer_cleanup_level = str(footer_cleanup_level)
+    footer_residual_raw = metadata.get("footer_residual_score")
+    footer_residual_score = float(footer_residual_raw) if footer_residual_raw is not None else None
+    footer_protected_raw = metadata.get("footer_protected_change_ratio")
+    footer_protected_change_ratio = float(footer_protected_raw) if footer_protected_raw is not None else None
+
     raw_regions = metadata.get("watermark_regions") or []
     regions: list[tuple[float, float, float, float]] = []
     for item in raw_regions:
@@ -118,6 +136,25 @@ def validate_output(
             reasons.append("page geometry changed")
             return QCReport(False, True, False, 1.0, tuple(failed_pages), tuple(reasons), 1.0)
 
+        footer_residual_ok = True
+        if footer_residual_score is not None and footer_residual_score > max_footer_residual_score:
+            footer_residual_ok = False
+            reasons.append(
+                f"footer residual {footer_residual_score:.4f} exceeds {max_footer_residual_score:.4f}"
+            )
+
+        footer_protected_ok = True
+        if (
+            footer_protected_change_ratio is not None
+            and footer_protected_change_ratio > max_footer_protected_change_ratio
+        ):
+            footer_protected_ok = False
+            reasons.append(
+                f"footer protected change {footer_protected_change_ratio:.4f} exceeds {max_footer_protected_change_ratio:.4f}"
+            )
+
+        footer_ok = footer_residual_ok and footer_protected_ok
+
         native_outside = metadata.get("native_outside_change_ratio")
         residual = metadata.get("watermark_residual_score")
         if native_outside is not None and residual is not None:
@@ -138,6 +175,7 @@ def validate_output(
                     and geometry_ok
                     and outside_ratio <= max_outside_change_ratio
                     and residual_score <= max_watermark_residual_score
+                    and footer_ok
                 ),
                 page_count_ok=page_count_ok,
                 geometry_ok=geometry_ok,
@@ -146,6 +184,9 @@ def validate_output(
                 reasons=tuple(reasons),
                 changed_pixel_ratio=changed_ratio,
                 watermark_residual_score=residual_score,
+                footer_residual_score=footer_residual_score,
+                footer_cleanup_level=footer_cleanup_level,
+                footer_protected_change_ratio=footer_protected_change_ratio,
             )
 
         outside_changed = 0
@@ -175,13 +216,21 @@ def validate_output(
                 f"outside-mask visual change {outside_ratio:.4f} exceeds {max_outside_change_ratio:.4f}"
             )
         return QCReport(
-            ok=page_count_ok and geometry_ok and outside_ratio <= max_outside_change_ratio,
+            ok=(
+                page_count_ok
+                and geometry_ok
+                and outside_ratio <= max_outside_change_ratio
+                and footer_ok
+            ),
             page_count_ok=page_count_ok,
             geometry_ok=geometry_ok,
             outside_change_ratio=float(outside_ratio),
             failed_pages=tuple(sorted(set(failed_pages))),
             reasons=tuple(reasons),
             changed_pixel_ratio=float(changed_ratio),
+            footer_residual_score=footer_residual_score,
+            footer_cleanup_level=footer_cleanup_level,
+            footer_protected_change_ratio=footer_protected_change_ratio,
         )
     finally:
         src.close()

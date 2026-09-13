@@ -97,3 +97,97 @@ def test_qc_accepts_low_native_residual_without_relaxing_outside_change_gate(tmp
     assert qc.ok
     assert qc.outside_change_ratio == 0.0
     assert qc.watermark_residual_score == 0.01
+
+
+def test_qc_rejects_excessive_footer_residual(tmp_path):
+    src = tmp_path / "src.pdf"
+    out = tmp_path / "out.pdf"
+    _pdf(src)
+    _pdf(out)
+    report = ProcessingReport(
+        "raster_template",
+        0.98,
+        str(out),
+        metadata={
+            "native_outside_change_ratio": 0.0,
+            "watermark_residual_score": 0.01,
+            "footer_residual_score": 0.050,
+            "footer_cleanup_level": "standard",
+            "footer_protected_change_ratio": 0.0,
+        },
+    )
+    qc = validate_output(src, out, report, dpi=72)
+    assert not qc.ok
+    assert qc.footer_residual_score == 0.050
+    assert qc.footer_cleanup_level == "standard"
+    assert qc.footer_protected_change_ratio == 0.0
+    assert any("footer residual" in reason for reason in qc.reasons)
+
+
+def test_qc_rejects_excessive_footer_protected_change(tmp_path):
+    src = tmp_path / "src.pdf"
+    out = tmp_path / "out.pdf"
+    _pdf(src)
+    _pdf(out)
+    report = ProcessingReport(
+        "raster_template",
+        0.98,
+        str(out),
+        metadata={
+            "native_outside_change_ratio": 0.0,
+            "watermark_residual_score": 0.01,
+            "footer_residual_score": 0.020,
+            "footer_cleanup_level": "deep",
+            "footer_protected_change_ratio": 0.010,
+        },
+    )
+    qc = validate_output(src, out, report, dpi=72)
+    assert not qc.ok
+    assert qc.footer_protected_change_ratio == 0.010
+    assert any("footer protected change" in reason for reason in qc.reasons)
+
+
+def test_qc_accepts_clean_footer_metrics(tmp_path):
+    src = tmp_path / "src.pdf"
+    out = tmp_path / "out.pdf"
+    _pdf(src)
+    _pdf(out)
+    report = ProcessingReport(
+        "raster_template",
+        0.98,
+        str(out),
+        metadata={
+            "native_outside_change_ratio": 0.0,
+            "watermark_residual_score": 0.01,
+            "footer_residual_score": 0.020,
+            "footer_cleanup_level": "deep",
+            "footer_protected_change_ratio": 0.0,
+        },
+    )
+    qc = validate_output(src, out, report, dpi=72)
+    assert qc.ok
+    assert qc.footer_residual_score == 0.020
+    assert qc.footer_cleanup_level == "deep"
+    assert qc.footer_protected_change_ratio == 0.0
+
+
+def test_qc_passes_without_footer_fields_backward_compatible(tmp_path):
+    src = tmp_path / "src.pdf"
+    out = tmp_path / "out.pdf"
+    _pdf(src)
+    _pdf(out)
+    report = ProcessingReport(
+        "raster_template",
+        0.98,
+        str(out),
+        metadata={
+            "native_outside_change_ratio": 0.0,
+            "watermark_residual_score": 0.01,
+        },
+    )
+    qc = validate_output(src, out, report, dpi=72)
+    assert qc.ok
+    assert qc.footer_residual_score is None
+    assert qc.footer_cleanup_level is None
+    assert qc.footer_protected_change_ratio is None
+
