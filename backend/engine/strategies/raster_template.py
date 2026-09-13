@@ -25,6 +25,7 @@ class RasterTemplateStrategy:
         output_pdf: Path,
         plan: ProcessingPlan,
         *,
+        footer_cleanup: str = "auto",
         log: Callable[[str], None] | None = None,
         progress: Callable[[int, int, str], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
@@ -36,6 +37,7 @@ class RasterTemplateStrategy:
             guided = clean_tailieuonthi_document(
                 input_pdf,
                 output_pdf,
+                footer_cleanup=footer_cleanup,
                 log=log,
                 progress=progress,
                 should_cancel=should_cancel,
@@ -54,6 +56,10 @@ class RasterTemplateStrategy:
                     "native_outside_change_ratio": guided.outside_change_ratio,
                     "native_changed_pixel_ratio": guided.changed_pixel_ratio,
                     "page_residual_scores": list(guided.page_residual_scores),
+                    "footer_cleanup_level": guided.footer_cleanup_level,
+                    "footer_residual_score": guided.footer_residual_score,
+                    "footer_protected_change_ratio": guided.footer_protected_change_ratio,
+                    "page_footer_residual_scores": list(guided.page_footer_residual_scores),
                 },
             )
         doc = fitz.open(str(input_pdf))
